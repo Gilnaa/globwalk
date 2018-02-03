@@ -24,30 +24,146 @@ extern crate globset;
 #[cfg(test)]
 extern crate tempdir;
 
-use globset::{GlobSet, Glob, GlobSetBuilder};
 use std::path::{PathBuf, Path};
-use std::fs::{File, create_dir_all};
+use globset::GlobSet;
+use walkdir::{WalkDir, DirEntry};
 
 /// An iterator for recursively yielding glob matches.
 ///
 /// The order of elements yielded by this iterator is unspecified.
-pub struct GlobWalker<'a> {
-    glob: &'a GlobSet,
+pub struct GlobWalker {
+    glob: GlobSet,
     base: PathBuf,
-    walker: walkdir::IntoIter,
+    walker: WalkDir,
 }
 
-impl<'a> GlobWalker<'a> {
-    pub fn new<P: AsRef<Path>>(glob: &'a GlobSet, base: P) -> Self {
+impl GlobWalker {
+    pub fn new<P: AsRef<Path>>(glob: GlobSet, base: P) -> Self {
         GlobWalker {
             glob,
             base: base.as_ref().into(),
-            walker: walkdir::WalkDir::new(base).into_iter(),
+            walker: walkdir::WalkDir::new(base),
+        }
+    }
+
+    /// Set the minimum depth of entries yielded by the iterator.
+    ///
+    /// The smallest depth is `0` and always corresponds to the path given
+    /// to the `new` function on this type. Its direct descendents have depth
+    /// `1`, and their descendents have depth `2`, and so on.
+    pub fn min_depth(mut self, depth: usize) -> Self {
+        self.walker = self.walker.min_depth(depth);
+        self
+    }
+
+    /// Set the maximum depth of entries yield by the iterator.
+    ///
+    /// The smallest depth is `0` and always corresponds to the path given
+    /// to the `new` function on this type. Its direct descendents have depth
+    /// `1`, and their descendents have depth `2`, and so on.
+    ///
+    /// Note that this will not simply filter the entries of the iterator, but
+    /// it will actually avoid descending into directories when the depth is
+    /// exceeded.
+    pub fn max_depth(mut self, depth: usize) -> Self {
+        self.walker = self.walker.max_depth(depth);
+        self
+    }
+
+    /// Follow symbolic links. By default, this is disabled.
+    ///
+    /// When `yes` is `true`, symbolic links are followed as if they were
+    /// normal directories and files. If a symbolic link is broken or is
+    /// involved in a loop, an error is yielded.
+    ///
+    /// When enabled, the yielded [`DirEntry`] values represent the target of
+    /// the link while the path corresponds to the link. See the [`DirEntry`]
+    /// type for more details.
+    ///
+    /// [`DirEntry`]: struct.DirEntry.html
+    pub fn follow_links(mut self, yes: bool) -> Self {
+        self.walker = self.walker.follow_links(yes);
+        self
+    }
+
+    /// Set the maximum number of simultaneously open file descriptors used
+    /// by the iterator.
+    ///
+    /// `n` must be greater than or equal to `1`. If `n` is `0`, then it is set
+    /// to `1` automatically. If this is not set, then it defaults to some
+    /// reasonably low number.
+    ///
+    /// This setting has no impact on the results yielded by the iterator
+    /// (even when `n` is `1`). Instead, this setting represents a trade off
+    /// between scarce resources (file descriptors) and memory. Namely, when
+    /// the maximum number of file descriptors is reached and a new directory
+    /// needs to be opened to continue iteration, then a previous directory
+    /// handle is closed and has its unyielded entries stored in memory. In
+    /// practice, this is a satisfying trade off because it scales with respect
+    /// to the *depth* of your file tree. Therefore, low values (even `1`) are
+    /// acceptable.
+    ///
+    /// Note that this value does not impact the number of system calls made by
+    /// an exhausted iterator.
+    ///
+    /// # Platform behavior
+    ///
+    /// On Windows, if `follow_links` is enabled, then this limit is not
+    /// respected. In particular, the maximum number of file descriptors opened
+    /// is proportional to the depth of the directory tree traversed.
+    pub fn max_open(mut self, n: usize) -> Self {
+        self.walker = self.walker.max_open(n);
+        self
+    }
+
+    /// Set a function for sorting directory entries.
+    ///
+    /// If a compare function is set, the resulting iterator will return all
+    /// paths in sorted order. The compare function will be called to compare
+    /// entries from the same directory.
+    pub fn sort_by<F>(mut self, cmp: F) -> Self
+        where F: FnMut(&DirEntry, &DirEntry) -> ::std::cmp::Ordering + Send + Sync + 'static
+    {
+        self.walker = self.walker.sort_by(cmp);
+        self
+    }
+
+    /// Yield a directory's contents before the directory itself. By default,
+    /// this is disabled.
+    ///
+    /// When `yes` is `false` (as is the default), the directory is yielded
+    /// before its contents are read. This is useful when, e.g. you want to
+    /// skip processing of some directories.
+    ///
+    /// When `yes` is `true`, the iterator yields the contents of a directory
+    /// before yielding the directory itself. This is useful when, e.g. you
+    /// want to recursively delete a directory.
+    pub fn contents_first(mut self, yes: bool) -> Self {
+        self.walker = self.walker.contents_first(yes);
+        self
+    }
+}
+
+impl IntoIterator for GlobWalker {
+    type Item = walkdir::DirEntry;
+    type IntoIter = IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter {
+            glob: self.glob,
+            base: self.base,
+            walker: self.walker.into_iter()
         }
     }
 }
 
-impl<'a> Iterator for GlobWalker<'a> {
+pub struct IntoIter {
+    glob: GlobSet,
+    base: PathBuf,
+    walker: walkdir::IntoIter,
+}
+
+impl Iterator for IntoIter {
     type Item = walkdir::DirEntry;
 
     // Possible optimization - Do not descend into directory that will never be a match
@@ -72,7 +188,9 @@ impl<'a> Iterator for GlobWalker<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ::globset::{GlobSetBuilder, Glob};
     use ::tempdir::TempDir;
+    use ::std::fs::{File, create_dir_all};
 
     fn touch(dir: &TempDir, names: &[&str]) {
         for name in names {
@@ -119,7 +237,7 @@ mod tests {
                                 "contrib/README.md",
                                 "contrib/README.rst"];
 
-        for matched_file in GlobWalker::new(&set, dir_path) {
+        for matched_file in GlobWalker::new(set, dir_path) {
             let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();
 
             let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
