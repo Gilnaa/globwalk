@@ -1,0 +1,11 @@
+[package]
+name = "globwalk"
+version = "0.1.0"
+authors = ["Gilad Naaman <gilad.naaman@gmail.com>"]
+
+[dependencies]
+walkdir = "2"
+globset = "0.2"
+
+[dev-dependencies]
+tempdir = "0.3"
