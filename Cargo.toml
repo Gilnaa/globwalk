@@ -7,7 +7,7 @@ readme = "README.md"
 license = "MIT"
 repository = "https://github.com/gilnaa/globwalk"
 categories = ["filesystem"]
-keywords = ["regex", "glob", "multiple", "set", "pattern", "directory", "recursive", "walk", "iterator"]
+keywords = ["regex", "glob", "pattern", "walk", "iterator"]
 
 [dependencies]
 walkdir = "2"
