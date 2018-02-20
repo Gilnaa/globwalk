@@ -17,6 +17,21 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
+//! A cross platform crate for recursively walking over paths matching a Glob pattern.
+//!
+//! This crate inherits many features from both `walkdir` and `globset`,
+//! like  optionally following symbolic links, limiting of open file descriptors,
+//! and more.
+//!
+//! Glob related options can be set by supplying your own `GlobSet` to `GlobWalk::from_globset`.
+//!
+//! # Example: Finding image files in the current directory.
+//!
+//! ```ignore
+//! for img in GlobWalker::from_patterns(&["*.{png,jpg,gif}"], ".") {
+//!     remove_file(img.path()).unwrap();
+//! }
+//! ```
 
 extern crate walkdir;
 extern crate globset;
@@ -25,7 +40,7 @@ extern crate globset;
 extern crate tempdir;
 
 use std::path::{PathBuf, Path};
-use globset::GlobSet;
+use globset::{GlobSetBuilder, Glob, GlobSet};
 use walkdir::{WalkDir, DirEntry};
 
 /// An iterator for recursively yielding glob matches.
@@ -38,7 +53,29 @@ pub struct GlobWalker {
 }
 
 impl GlobWalker {
-    pub fn new<P: AsRef<Path>>(glob: GlobSet, base: P) -> Self {
+    /// Construct a new `GlobWalker` from a list of patterns.
+    ///
+    /// When iterated, the `base` will be recursively searched for paths
+    /// matching `pats`.
+    pub fn from_patterns<S, P>(pats: &[S], base: P) -> Result<Self, globset::Error>
+        where S: AsRef<str>,
+              P: AsRef<Path> {
+
+        let mut builder = GlobSetBuilder::new();
+        for pattern in pats {
+            builder.add(Glob::new(pattern.as_ref())?);
+        }
+
+        let set = builder.build()?;
+
+        Ok(Self::from_globset(set, base))
+    }
+
+    /// Construct a new `GlobWalker` from a GlobSet
+    ///
+    /// When iterated, the `base` will be recursively searched for paths
+    /// matching `glob`.
+    pub fn from_globset<P: AsRef<Path>>(glob: GlobSet, base: P) -> Self {
         GlobWalker {
             glob,
             base: base.as_ref().into(),
@@ -157,6 +194,13 @@ impl IntoIterator for GlobWalker {
     }
 }
 
+/// An iterator which emits glob-matched patterns.
+///
+/// An instance of this type must be constructed through `GlobWalker`,
+/// which uses a builder-style pattern.
+///
+/// The order of the yielded paths is undefined, unless specified by the user
+/// using `GlobWalker::sort_by`.
 pub struct IntoIter {
     glob: GlobSet,
     base: PathBuf,
@@ -188,17 +232,20 @@ impl Iterator for IntoIter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ::globset::{GlobSetBuilder, Glob};
     use ::tempdir::TempDir;
     use ::std::fs::{File, create_dir_all};
 
     fn touch(dir: &TempDir, names: &[&str]) {
         for name in names {
+            let name = normalize_path_sep(name);
             File::create(dir.path().join(name)).expect("Failed to create a test file");
         }
     }
 
-    // FIXME: This test doesn't work on Windows because of the path separators.
+    fn normalize_path_sep<S: AsRef<str>>(s: S) -> String {
+        s.as_ref().replace("[/]", if cfg!(windows) {"\\"} else {"/"})
+    }
+
     #[test]
     fn do_the_globwalk() {
         let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
@@ -212,13 +259,13 @@ mod tests {
             "b.rs",
             "avocado.rs",
             "lib.c",
-            "src/hello.rs",
-            "src/world.rs",
-            "src/some_mod/unexpected.rs",
-            "src/cruel.txt",
-            "contrib/README.md",
-            "contrib/README.rst",
-            "contrib/lib.rs",
+            "src[/]hello.rs",
+            "src[/]world.rs",
+            "src[/]some_mod[/]unexpected.rs",
+            "src[/]cruel.txt",
+            "contrib[/]README.md",
+            "contrib[/]README.rst",
+            "contrib[/]lib.rs",
         ][..]);
 
 
@@ -229,16 +276,52 @@ mod tests {
         builder.add(Glob::new("**/*.{md,rst}").unwrap());
         let set = builder.build().unwrap();
 
-        let mut expected = vec!["src/some_mod/unexpected.rs",
-                                "src/world.rs",
-                                "src/hello.rs",
-                                "lib.c",
-                                "contrib/lib.rs",
-                                "contrib/README.md",
-                                "contrib/README.rst"];
+        let mut expected: Vec<_> = ["src[/]some_mod[/]unexpected.rs",
+                                    "src[/]world.rs",
+                                    "src[/]hello.rs",
+                                    "lib.c",
+                                    "contrib[/]lib.rs",
+                                    "contrib[/]README.md",
+                                    "contrib[/]README.rst"].iter().map(normalize_path_sep).collect();
 
-        for matched_file in GlobWalker::new(set, dir_path) {
+        for matched_file in GlobWalker::from_globset(set, dir_path) {
             let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();
+            let path = path.replace("[/]", if cfg!(windows) {"\\"} else {"/"});
+
+            println!("path = {}", path);
+
+            let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
+                idx
+            } else {
+                panic!("Iterated file is unexpected: {}", path);
+            };
+            expected.remove(del_idx);
+        }
+
+        let empty: &[&str] = &[][..];
+        assert_eq!(expected, empty);
+    }
+
+    #[test]
+    fn find_image_files() {
+        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir_path = dir.path();
+
+        touch(&dir, &[
+            "a.rs",
+            "a.jpg",
+            "a.png",
+            "b.docx",
+        ][..]);
+
+
+        let mut expected = vec!["a.jpg", "a.png"];
+
+        for matched_file in GlobWalker::from_patterns(&["*.{png,jpg,gif}"], dir_path).unwrap() {
+            let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();
+            let path = path.replace("[/]", if cfg!(windows) {"\\"} else {"/"});
+
+            println!("path = {}", path);
 
             let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
                 idx

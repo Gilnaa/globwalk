@@ -1,7 +1,13 @@
 [package]
 name = "globwalk"
 version = "0.1.0"
+description = "Glob-matched recursive file system walking."
 authors = ["Gilad Naaman <gilad.naaman@gmail.com>"]
+readme = "README.md"
+license = "MIT"
+repository = "https://github.com/gilnaa/globwalk"
+categories = ["filesystem"]
+keywords = ["regex", "glob", "multiple", "set", "pattern", "directory", "recursive", "walk", "iterator"]
 
 [dependencies]
 walkdir = "2"
