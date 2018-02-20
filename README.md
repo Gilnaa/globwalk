@@ -28,8 +28,10 @@ use globwalk::GlobWalker;
 
 fn search_and_destroy() {
     for track in GlobWalker::from_patterns(&["**/*.{mp3,flac}"], ".") {
-        // Destroy satanic rhythms
-        std::fs::remove_file(track.path()); 
+        if let Ok(track) = track {
+            // Destroy satanic rhythms
+            std::fs::remove_file(track.path());
+        } 
     }
 }
 ```
@@ -44,7 +46,9 @@ use globwalk::GlobWalker;
 fn search_and_destroy() {
     let walker = GlobWalker::from_patterns(&["**/*.{mp3,flac}"], ".")
                     .max_depth(4)
-                    .follow_links(true);
+                    .follow_links(true)
+                    .into_iter()
+                    .filter_map(Result::ok);
                     
     for track in walker {
         // Destroy symbolic satanic rhythms, but do not stray far.

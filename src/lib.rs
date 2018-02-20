@@ -29,7 +29,9 @@
 //!
 //! ```ignore
 //! for img in GlobWalker::from_patterns(&["*.{png,jpg,gif}"], ".") {
-//!     remove_file(img.path()).unwrap();
+//!     if let Ok(img) = img {
+//!         remove_file(img.path()).unwrap();
+//!     }
 //! }
 //! ```
 
@@ -182,7 +184,7 @@ impl GlobWalker {
 }
 
 impl IntoIterator for GlobWalker {
-    type Item = walkdir::DirEntry;
+    type Item = walkdir::Result<walkdir::DirEntry>;
     type IntoIter = IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -208,18 +210,23 @@ pub struct IntoIter {
 }
 
 impl Iterator for IntoIter {
-    type Item = walkdir::DirEntry;
+    type Item = walkdir::Result<walkdir::DirEntry>;
 
     // Possible optimization - Do not descend into directory that will never be a match
     fn next(&mut self) -> Option<Self::Item> {
         for entry in &mut self.walker {
-            if let Ok(entry) = entry {
-                // Strip the common base directory so that the matcher will be
-                // able to recognize the file name.
-                // `unwrap` here is safe, since walkdir returns the files with relation
-                // to the given base-dir.
-                if self.glob.is_match(entry.path().strip_prefix(&*self.base).unwrap()) {
-                    return Some(entry)
+            match entry {
+                Ok(e) => {
+                    // Strip the common base directory so that the matcher will be
+                    // able to recognize the file name.
+                    // `unwrap` here is safe, since walkdir returns the files with relation
+                    // to the given base-dir.
+                    if self.glob.is_match((&e).path().strip_prefix(&*self.base).unwrap()) {
+                        return Some(Ok(e));
+                    }
+                },
+                Err(e) => {
+                    return Some(Err(e));
                 }
             }
         }
@@ -284,7 +291,9 @@ mod tests {
                                     "contrib[/]README.md",
                                     "contrib[/]README.rst"].iter().map(normalize_path_sep).collect();
 
-        for matched_file in GlobWalker::from_globset(set, dir_path) {
+        for matched_file in GlobWalker::from_globset(set, dir_path)
+                                        .into_iter()
+                                        .filter_map(Result::ok) {
             let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();
             let path = path.replace("[/]", if cfg!(windows) {"\\"} else {"/"});
 
@@ -317,7 +326,10 @@ mod tests {
 
         let mut expected = vec!["a.jpg", "a.png"];
 
-        for matched_file in GlobWalker::from_patterns(&["*.{png,jpg,gif}"], dir_path).unwrap() {
+        for matched_file in GlobWalker::from_patterns(&["*.{png,jpg,gif}"], dir_path)
+                                        .unwrap()
+                                        .into_iter()
+                                        .filter_map(Result::ok) {
             let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();
             let path = path.replace("[/]", if cfg!(windows) {"\\"} else {"/"});
 
