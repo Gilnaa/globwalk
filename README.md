@@ -33,7 +33,7 @@ extern crate globwalk;
 use globwalk::GlobWalker;
 
 fn search_and_destroy() {
-    for track in GlobWalker::from_patterns(&["**/*.{mp3,flac}"], ".") {
+    for track in GlobWalker::new("**/*.{mp3,flac}").unwrap() {
         if let Ok(track) = track {
             // Destroy satanic rhythms
             std::fs::remove_file(track.path());
@@ -50,7 +50,8 @@ extern crate globwalk;
 use globwalk::GlobWalker;
 
 fn search_and_destroy() {
-    let walker = GlobWalker::from_patterns(&["**/*.{mp3,flac}"], ".")
+    let walker = GlobWalker::new("**/*.{mp3,flac}")
+                    .unwrap()
                     .max_depth(4)
                     .follow_links(true)
                     .into_iter()
