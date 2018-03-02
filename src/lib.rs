@@ -42,6 +42,7 @@ extern crate globset;
 extern crate tempdir;
 
 use std::path::{PathBuf, Path};
+use std::cmp::Ordering;
 use globset::{GlobSetBuilder, Glob, GlobSet};
 use walkdir::{WalkDir, DirEntry};
 
@@ -51,17 +52,27 @@ use walkdir::{WalkDir, DirEntry};
 pub struct GlobWalker {
     glob: GlobSet,
     base: PathBuf,
-    walker: WalkDir,
+
+    min_depth: usize,
+    max_depth: usize,
+    follow_links: bool,
+    max_open: usize,
+    sort_by: Option<Box<
+        FnMut(&DirEntry,&DirEntry) -> Ordering + Send + Sync + 'static
+    >>,
+    contents_first: bool,
 }
 
 impl GlobWalker {
+    pub fn new<S: AsRef<str>>(pattern: S) -> Result<Self, globset::Error> {
+        GlobWalker::from_patterns(&[pattern])
+    }
+
     /// Construct a new `GlobWalker` from a list of patterns.
     ///
-    /// When iterated, the `base` will be recursively searched for paths
+    /// When iterated, the base directory will be recursively searched for paths
     /// matching `pats`.
-    pub fn from_patterns<S, P>(pats: &[S], base: P) -> Result<Self, globset::Error>
-        where S: AsRef<str>,
-              P: AsRef<Path> {
+    pub fn from_patterns<S: AsRef<str>>(pats: &[S]) -> Result<Self, globset::Error> {
 
         let mut builder = GlobSetBuilder::new();
         for pattern in pats {
@@ -70,19 +81,29 @@ impl GlobWalker {
 
         let set = builder.build()?;
 
-        Ok(Self::from_globset(set, base))
+        Ok(Self::from_globset(set))
     }
 
     /// Construct a new `GlobWalker` from a GlobSet
     ///
-    /// When iterated, the `base` will be recursively searched for paths
+    /// When iterated, the base directory will be recursively searched for paths
     /// matching `glob`.
-    pub fn from_globset<P: AsRef<Path>>(glob: GlobSet, base: P) -> Self {
+    pub fn from_globset(glob: GlobSet) -> Self {
         GlobWalker {
             glob,
-            base: base.as_ref().into(),
-            walker: walkdir::WalkDir::new(base),
+            base: ".".into(),
+            follow_links: false,
+            max_open: 10,
+            min_depth: 0,
+            max_depth: ::std::usize::MAX,
+            sort_by: None,
+            contents_first: false,
         }
+    }
+
+    pub fn base_dir<P: AsRef<Path>>(mut self, base: P) -> Self {
+        self.base = base.as_ref().into();
+        self
     }
 
     /// Set the minimum depth of entries yielded by the iterator.
@@ -91,7 +112,7 @@ impl GlobWalker {
     /// to the `new` function on this type. Its direct descendents have depth
     /// `1`, and their descendents have depth `2`, and so on.
     pub fn min_depth(mut self, depth: usize) -> Self {
-        self.walker = self.walker.min_depth(depth);
+        self.min_depth = depth;
         self
     }
 
@@ -105,7 +126,7 @@ impl GlobWalker {
     /// it will actually avoid descending into directories when the depth is
     /// exceeded.
     pub fn max_depth(mut self, depth: usize) -> Self {
-        self.walker = self.walker.max_depth(depth);
+        self.max_depth = depth;
         self
     }
 
@@ -121,7 +142,7 @@ impl GlobWalker {
     ///
     /// [`DirEntry`]: struct.DirEntry.html
     pub fn follow_links(mut self, yes: bool) -> Self {
-        self.walker = self.walker.follow_links(yes);
+        self.follow_links = yes;
         self
     }
 
@@ -151,7 +172,7 @@ impl GlobWalker {
     /// respected. In particular, the maximum number of file descriptors opened
     /// is proportional to the depth of the directory tree traversed.
     pub fn max_open(mut self, n: usize) -> Self {
-        self.walker = self.walker.max_open(n);
+        self.max_open = n;
         self
     }
 
@@ -161,9 +182,9 @@ impl GlobWalker {
     /// paths in sorted order. The compare function will be called to compare
     /// entries from the same directory.
     pub fn sort_by<F>(mut self, cmp: F) -> Self
-        where F: FnMut(&DirEntry, &DirEntry) -> ::std::cmp::Ordering + Send + Sync + 'static
+        where F: FnMut(&DirEntry, &DirEntry) -> Ordering + Send + Sync + 'static
     {
-        self.walker = self.walker.sort_by(cmp);
+        self.sort_by = Some(Box::new(cmp));
         self
     }
 
@@ -178,7 +199,7 @@ impl GlobWalker {
     /// before yielding the directory itself. This is useful when, e.g. you
     /// want to recursively delete a directory.
     pub fn contents_first(mut self, yes: bool) -> Self {
-        self.walker = self.walker.contents_first(yes);
+        self.contents_first = yes;
         self
     }
 }
@@ -188,10 +209,25 @@ impl IntoIterator for GlobWalker {
     type IntoIter = IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
+        let walker = WalkDir::new(&self.base)
+            .min_depth(self.min_depth)
+            .max_depth(self.max_depth)
+            .max_open(self.max_open)
+            .follow_links(self.follow_links)
+            .contents_first(self.contents_first);
+
+        // FIXME: Long-ass type error I didn't bother to read.
+//        let walker = if let Some(sorter) = self.sort_by {
+//            walker.sort_by(sorter)
+//        }
+//        else {
+//            walker
+//        };
+
         IntoIter {
             glob: self.glob,
             base: self.base,
-            walker: self.walker.into_iter()
+            walker: walker.into_iter()
         }
     }
 }
@@ -291,7 +327,8 @@ mod tests {
                                     "contrib[/]README.md",
                                     "contrib[/]README.rst"].iter().map(normalize_path_sep).collect();
 
-        for matched_file in GlobWalker::from_globset(set, dir_path)
+        for matched_file in GlobWalker::from_globset(set)
+                                        .base_dir(dir_path)
                                         .into_iter()
                                         .filter_map(Result::ok) {
             let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();
@@ -326,8 +363,9 @@ mod tests {
 
         let mut expected = vec!["a.jpg", "a.png"];
 
-        for matched_file in GlobWalker::from_patterns(&["*.{png,jpg,gif}"], dir_path)
+        for matched_file in GlobWalker::new("*.{png,jpg,gif}")
                                         .unwrap()
+                                        .base_dir(dir_path)
                                         .into_iter()
                                         .filter_map(Result::ok) {
             let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();
