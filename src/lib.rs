@@ -46,6 +46,9 @@ use std::cmp::Ordering;
 use globset::{GlobSetBuilder, Glob, GlobSet};
 use walkdir::{WalkDir, DirEntry};
 
+type GlobError = globset::Error;
+type WalkError = walkdir::Error;
+
 /// An iterator for recursively yielding glob matches.
 ///
 /// The order of elements yielded by this iterator is unspecified.
@@ -64,7 +67,7 @@ pub struct GlobWalker {
 }
 
 impl GlobWalker {
-    pub fn new<S: AsRef<str>>(pattern: S) -> Result<Self, globset::Error> {
+    pub fn new<S: AsRef<str>>(pattern: S) -> Result<Self, GlobError> {
         GlobWalker::from_patterns(&[pattern])
     }
 
@@ -72,7 +75,7 @@ impl GlobWalker {
     ///
     /// When iterated, the base directory will be recursively searched for paths
     /// matching `pats`.
-    pub fn from_patterns<S: AsRef<str>>(pats: &[S]) -> Result<Self, globset::Error> {
+    pub fn from_patterns<S: AsRef<str>>(pats: &[S]) -> Result<Self, GlobError> {
 
         let mut builder = GlobSetBuilder::new();
         for pattern in pats {
@@ -101,6 +104,7 @@ impl GlobWalker {
         }
     }
 
+    /// Change the root dir of the walker.
     pub fn base_dir<P: AsRef<Path>>(mut self, base: P) -> Self {
         self.base = base.as_ref().into();
         self
@@ -176,17 +180,18 @@ impl GlobWalker {
         self
     }
 
-    /// Set a function for sorting directory entries.
-    ///
-    /// If a compare function is set, the resulting iterator will return all
-    /// paths in sorted order. The compare function will be called to compare
-    /// entries from the same directory.
-    pub fn sort_by<F>(mut self, cmp: F) -> Self
-        where F: FnMut(&DirEntry, &DirEntry) -> Ordering + Send + Sync + 'static
-    {
-        self.sort_by = Some(Box::new(cmp));
-        self
-    }
+// FIXME: See next FIXME
+//    /// Set a function for sorting directory entries.
+//    ///
+//    /// If a compare function is set, the resulting iterator will return all
+//    /// paths in sorted order. The compare function will be called to compare
+//    /// entries from the same directory.
+//    pub fn sort_by<F>(mut self, cmp: F) -> Self
+//        where F: FnMut(&DirEntry, &DirEntry) -> Ordering + Send + Sync + 'static
+//    {
+//        self.sort_by = Some(Box::new(cmp));
+//        self
+//    }
 
     /// Yield a directory's contents before the directory itself. By default,
     /// this is disabled.
@@ -205,7 +210,7 @@ impl GlobWalker {
 }
 
 impl IntoIterator for GlobWalker {
-    type Item = walkdir::Result<walkdir::DirEntry>;
+    type Item = Result<DirEntry, WalkError>;
     type IntoIter = IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -216,13 +221,13 @@ impl IntoIterator for GlobWalker {
             .follow_links(self.follow_links)
             .contents_first(self.contents_first);
 
-        // FIXME: Long-ass type error I didn't bother to read.
-//        let walker = if let Some(sorter) = self.sort_by {
-//            walker.sort_by(sorter)
-//        }
-//        else {
-//            walker
-//        };
+        // FIXME: This cannot compile right now.
+        // let walker = if let Some(sorter) = self.sort_by.take() {
+        //     walker.sort_by(move |a, b| sorter(a, b))
+        // }
+        // else {
+        //     walker
+        // };
 
         IntoIter {
             glob: self.glob,
@@ -246,7 +251,7 @@ pub struct IntoIter {
 }
 
 impl Iterator for IntoIter {
-    type Item = walkdir::Result<walkdir::DirEntry>;
+    type Item = Result<DirEntry, WalkError>;
 
     // Possible optimization - Do not descend into directory that will never be a match
     fn next(&mut self) -> Option<Self::Item> {
@@ -269,6 +274,10 @@ impl Iterator for IntoIter {
 
         None
     }
+}
+
+pub fn glob<S: AsRef<str>>(pattern: S) -> Result<GlobWalker, GlobError> {
+    GlobWalker::new(pattern)
 }
 
 
