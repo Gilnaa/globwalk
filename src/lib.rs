@@ -17,13 +17,15 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-//! A cross platform crate for recursively walking over paths matching a Glob pattern.
+//! Recursively find files in a directory using globs.
 //!
-//! This crate inherits many features from both `walkdir` and `globset`,
-//! like  optionally following symbolic links, limiting of open file descriptors,
-//! and more.
+//! Features include
+//! - [`gitignore`'s extended glob syntax][gitignore]
+//! - Control over symlink behavior
+//! - Control depth walked
+//! - Control order results are returned
 //!
-//! Glob related options can be set by supplying your own `GlobSet` to `GlobWalk::from_globset`.
+//! [gitignore]: https://git-scm.com/docs/gitignore#_pattern_format
 //!
 //! # Example: Finding image files in the current directory.
 //!
@@ -39,26 +41,26 @@
 //! }
 //! ```
 
+extern crate ignore;
 extern crate walkdir;
-extern crate globset;
 
 #[cfg(test)]
 extern crate tempdir;
 
-use std::path::{PathBuf, Path};
+use std::path::Path;
 use std::cmp::Ordering;
-use globset::{GlobSetBuilder, Glob, GlobSet};
+use ignore::Match;
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use walkdir::{WalkDir, DirEntry};
 
-type GlobError = globset::Error;
+type GlobError = ignore::Error;
 type WalkError = walkdir::Error;
 
 /// An iterator for recursively yielding glob matches.
 ///
 /// The order of elements yielded by this iterator is unspecified.
 pub struct GlobWalker {
-    glob: GlobSet,
-    base: PathBuf,
+    ignore: Gitignore,
 
     min_depth: usize,
     max_depth: usize,
@@ -71,34 +73,43 @@ pub struct GlobWalker {
 }
 
 impl GlobWalker {
-    pub fn new<S: AsRef<str>>(pattern: S) -> Result<Self, GlobError> {
-        GlobWalker::from_patterns(&[pattern])
+    /// Construct a new `GlobWalker` with a glob pattern.
+    ///
+    /// When iterated, the `base` directory will be recursively searched for paths
+    /// matching `pattern`.
+    pub fn new<P, S>(base: P, pattern: S) -> Result<Self, GlobError>
+    where
+        P: AsRef<Path>,
+        S: AsRef<str>,
+    {
+        GlobWalker::from_patterns(base, &[pattern])
     }
 
     /// Construct a new `GlobWalker` from a list of patterns.
     ///
-    /// When iterated, the base directory will be recursively searched for paths
-    /// matching `pats`.
-    pub fn from_patterns<S: AsRef<str>>(pats: &[S]) -> Result<Self, GlobError> {
-
-        let mut builder = GlobSetBuilder::new();
-        for pattern in pats {
-            builder.add(Glob::new(pattern.as_ref())?);
+    /// When iterated, the `base` directory will be recursively searched for paths
+    /// matching `patterns`.
+    pub fn from_patterns<P, S>(base: P, patterns: &[S]) -> Result<Self, GlobError>
+    where
+        P: AsRef<Path>,
+        S: AsRef<str>,
+    {
+        let mut builder = GitignoreBuilder::new(base.as_ref());
+        for pattern in patterns {
+            builder.add_line(None, pattern.as_ref())?;
         }
+        let ignore = builder.build()?;
 
-        let set = builder.build()?;
-
-        Ok(Self::from_globset(set))
+        Ok(Self::from_ignore(ignore))
     }
 
     /// Construct a new `GlobWalker` from a GlobSet
     ///
     /// When iterated, the base directory will be recursively searched for paths
     /// matching `glob`.
-    pub fn from_globset(glob: GlobSet) -> Self {
+    fn from_ignore(ignore: Gitignore) -> Self {
         GlobWalker {
-            glob,
-            base: ".".into(),
+            ignore,
             follow_links: false,
             max_open: 10,
             min_depth: 0,
@@ -107,13 +118,6 @@ impl GlobWalker {
             contents_first: false,
         }
     }
-
-    /// Change the root dir of the walker.
-    pub fn base_dir<P: AsRef<Path>>(mut self, base: P) -> Self {
-        self.base = base.as_ref().into();
-        self
-    }
-
     /// Set the minimum depth of entries yielded by the iterator.
     ///
     /// The smallest depth is `0` and always corresponds to the path given
@@ -218,7 +222,7 @@ impl IntoIterator for GlobWalker {
     type IntoIter = IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        let walker = WalkDir::new(&self.base)
+        let walker = WalkDir::new(self.ignore.path())
             .min_depth(self.min_depth)
             .max_depth(self.max_depth)
             .max_open(self.max_open)
@@ -234,8 +238,7 @@ impl IntoIterator for GlobWalker {
         // };
 
         IntoIter {
-            glob: self.glob,
-            base: self.base,
+            ignore: self.ignore,
             walker: walker.into_iter()
         }
     }
@@ -249,8 +252,7 @@ impl IntoIterator for GlobWalker {
 /// The order of the yielded paths is undefined, unless specified by the user
 /// using `GlobWalker::sort_by`.
 pub struct IntoIter {
-    glob: GlobSet,
-    base: PathBuf,
+    ignore: Gitignore,
     walker: walkdir::IntoIter,
 }
 
@@ -266,7 +268,16 @@ impl Iterator for IntoIter {
                     // able to recognize the file name.
                     // `unwrap` here is safe, since walkdir returns the files with relation
                     // to the given base-dir.
-                    if self.glob.is_match((&e).path().strip_prefix(&*self.base).unwrap()) {
+                    let is_requested = {
+                        let rel_path = e.path().strip_prefix(self.ignore.path()).unwrap();
+                        let is_dir = e.file_type().is_dir();
+                        match self.ignore.matched_path_or_any_parents(rel_path, is_dir) {
+                            Match::None => false,
+                            Match::Ignore(_) => true,
+                            Match::Whitelist(_) => false,
+                        }
+                    };
+                    if is_requested {
                         return Some(Ok(e));
                     }
                 },
@@ -281,7 +292,7 @@ impl Iterator for IntoIter {
 }
 
 pub fn glob<S: AsRef<str>>(pattern: S) -> Result<GlobWalker, GlobError> {
-    GlobWalker::new(pattern)
+    GlobWalker::new(".", pattern)
 }
 
 
@@ -317,9 +328,8 @@ mod tests {
 
         let mut expected = vec!["a.jpg", "a.png"];
 
-        for matched_file in GlobWalker::new("*.{png,jpg,gif}")
+        for matched_file in GlobWalker::new(dir_path, "*.{png,jpg,gif}")
                                         .unwrap()
-                                        .base_dir(dir_path)
                                         .into_iter()
                                         .filter_map(Result::ok) {
             let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();
@@ -371,9 +381,60 @@ mod tests {
                                     "contrib[/]README.rst"].iter().map(normalize_path_sep).collect();
 
         let patterns = ["src/**/*.rs", "*.c", "**/lib.rs", "**/*.{md,rst}"];
-        for matched_file in GlobWalker::from_patterns(&patterns)
+        for matched_file in GlobWalker::from_patterns(dir_path, &patterns)
                                         .unwrap()
-                                        .base_dir(dir_path)
+                                        .into_iter()
+                                        .filter_map(Result::ok) {
+            let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();
+            let path = path.replace("[/]", if cfg!(windows) {"\\"} else {"/"});
+
+            println!("path = {}", path);
+
+            let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
+                idx
+            } else {
+                panic!("Iterated file is unexpected: {}", path);
+            };
+            expected.remove(del_idx);
+        }
+
+        let empty: &[&str] = &[][..];
+        assert_eq!(expected, empty);
+    }
+
+    #[test]
+    fn test_blacklist() {
+        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir_path = dir.path();
+        create_dir_all(dir_path.join("src/some_mod")).expect("");
+        create_dir_all(dir_path.join("tests")).expect("");
+        create_dir_all(dir_path.join("contrib")).expect("");
+
+        touch(&dir, &[
+            "a.rs",
+            "b.rs",
+            "avocado.rs",
+            "lib.c",
+            "src[/]hello.rs",
+            "src[/]world.rs",
+            "src[/]some_mod[/]unexpected.rs",
+            "src[/]cruel.txt",
+            "contrib[/]README.md",
+            "contrib[/]README.rst",
+            "contrib[/]lib.rs",
+        ][..]);
+
+
+        let mut expected: Vec<_> = ["src[/]some_mod[/]unexpected.rs",
+                                    "src[/]hello.rs",
+                                    "lib.c",
+                                    "contrib[/]lib.rs",
+                                    "contrib[/]README.md",
+                                    "contrib[/]README.rst"].iter().map(normalize_path_sep).collect();
+
+        let patterns = ["src/**/*.rs", "*.c", "**/lib.rs", "**/*.{md,rst}", "!world.rs"];
+        for matched_file in GlobWalker::from_patterns(dir_path, &patterns)
+                                        .unwrap()
                                         .into_iter()
                                         .filter_map(Result::ok) {
             let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();

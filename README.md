@@ -1,7 +1,8 @@
 # GlobWalk #
-A cross platform crate for recursively walking over paths matching a Glob pattern.
+Recursively find files in a directory using globs.
 
-Based on both `walkdir` &️ `globset` (❤), this crate inherits many goodies from both, such as limiting search depth and amount of open file descriptors. 
+Based on both `walkdir` &️ `globset` (❤), this crate inherits many goodies from
+both, such as limiting search depth and amount of open file descriptors.
 
 Licensed under MIT.
 
@@ -9,6 +10,7 @@ Licensed under MIT.
 
  - The `glob` crate does not support having `{a,b}` in patterns.
  - `globwalk` can match several glob-patterns at the same time.
+ - `globwalk` supports excluding results with `!`.
  - `glob` searches for files in the current working directory, whereas `globwalk` starts at a specified base-dir.
 
 ### Documentation ###
