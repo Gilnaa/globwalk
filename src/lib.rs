@@ -303,44 +303,22 @@ mod tests {
     }
 
     #[test]
-    fn do_the_globwalk() {
+    fn test_new() {
         let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
         let dir_path = dir.path();
-        create_dir_all(dir_path.join("src/some_mod")).expect("");
-        create_dir_all(dir_path.join("tests")).expect("");
-        create_dir_all(dir_path.join("contrib")).expect("");
 
         touch(&dir, &[
             "a.rs",
-            "b.rs",
-            "avocado.rs",
-            "lib.c",
-            "src[/]hello.rs",
-            "src[/]world.rs",
-            "src[/]some_mod[/]unexpected.rs",
-            "src[/]cruel.txt",
-            "contrib[/]README.md",
-            "contrib[/]README.rst",
-            "contrib[/]lib.rs",
+            "a.jpg",
+            "a.png",
+            "b.docx",
         ][..]);
 
 
-        let mut builder = GlobSetBuilder::new();
-        builder.add(Glob::new("src/**/*.rs").unwrap());
-        builder.add(Glob::new("*.c").unwrap());
-        builder.add(Glob::new("**/lib.rs").unwrap());
-        builder.add(Glob::new("**/*.{md,rst}").unwrap());
-        let set = builder.build().unwrap();
+        let mut expected = vec!["a.jpg", "a.png"];
 
-        let mut expected: Vec<_> = ["src[/]some_mod[/]unexpected.rs",
-                                    "src[/]world.rs",
-                                    "src[/]hello.rs",
-                                    "lib.c",
-                                    "contrib[/]lib.rs",
-                                    "contrib[/]README.md",
-                                    "contrib[/]README.rst"].iter().map(normalize_path_sep).collect();
-
-        for matched_file in GlobWalker::from_globset(set)
+        for matched_file in GlobWalker::new("*.{png,jpg,gif}")
+                                        .unwrap()
                                         .base_dir(dir_path)
                                         .into_iter()
                                         .filter_map(Result::ok) {
@@ -362,21 +340,38 @@ mod tests {
     }
 
     #[test]
-    fn find_image_files() {
+    fn test_from_patterns() {
         let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
         let dir_path = dir.path();
+        create_dir_all(dir_path.join("src/some_mod")).expect("");
+        create_dir_all(dir_path.join("tests")).expect("");
+        create_dir_all(dir_path.join("contrib")).expect("");
 
         touch(&dir, &[
             "a.rs",
-            "a.jpg",
-            "a.png",
-            "b.docx",
+            "b.rs",
+            "avocado.rs",
+            "lib.c",
+            "src[/]hello.rs",
+            "src[/]world.rs",
+            "src[/]some_mod[/]unexpected.rs",
+            "src[/]cruel.txt",
+            "contrib[/]README.md",
+            "contrib[/]README.rst",
+            "contrib[/]lib.rs",
         ][..]);
 
 
-        let mut expected = vec!["a.jpg", "a.png"];
+        let mut expected: Vec<_> = ["src[/]some_mod[/]unexpected.rs",
+                                    "src[/]world.rs",
+                                    "src[/]hello.rs",
+                                    "lib.c",
+                                    "contrib[/]lib.rs",
+                                    "contrib[/]README.md",
+                                    "contrib[/]README.rst"].iter().map(normalize_path_sep).collect();
 
-        for matched_file in GlobWalker::new("*.{png,jpg,gif}")
+        let patterns = ["src/**/*.rs", "*.c", "**/lib.rs", "**/*.{md,rst}"];
+        for matched_file in GlobWalker::from_patterns(&patterns)
                                         .unwrap()
                                         .base_dir(dir_path)
                                         .into_iter()
