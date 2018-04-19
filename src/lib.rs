@@ -27,10 +27,14 @@
 //!
 //! # Example: Finding image files in the current directory.
 //!
-//! ```ignore
-//! for img in GlobWalker::from_patterns(&["*.{png,jpg,gif}"], ".") {
+//! ```no_run
+//! extern crate globwalk;
+//!
+//! use std::fs;
+//!
+//! for img in globwalk::glob("*.{png,jpg,gif}").unwrap() {
 //!     if let Ok(img) = img {
-//!         remove_file(img.path()).unwrap();
+//!         fs::remove_file(img.path()).unwrap();
 //!     }
 //! }
 //! ```
