@@ -28,16 +28,14 @@ globwalk = "0.1"
 
 The following piece of code recursively find all mp3 and FLAC files:
 
-```rust
+```rust,no_run
 extern crate globwalk;
-use globwalk::GlobWalker;
 
-fn search_and_destroy() {
-    for track in GlobWalker::new("**/*.{mp3,flac}").unwrap() {
-        if let Ok(track) = track {
-            // Destroy satanic rhythms
-            std::fs::remove_file(track.path());
-        } 
+use std::fs;
+
+for img in globwalk::glob("*.{png,jpg,gif}").unwrap() {
+    if let Ok(img) = img {
+        fs::remove_file(img.path()).unwrap();
     }
 }
 ```
@@ -45,21 +43,18 @@ fn search_and_destroy() {
 
 ### Example: Tweak walk options
 
-```rust
+```rust,no_run
 extern crate globwalk;
-use globwalk::GlobWalker;
 
-fn search_and_destroy() {
-    let walker = GlobWalker::new("**/*.{mp3,flac}")
-                    .unwrap()
-                    .max_depth(4)
-                    .follow_links(true)
-                    .into_iter()
-                    .filter_map(Result::ok);
-                    
-    for track in walker {
-        // Destroy symbolic satanic rhythms, but do not stray far.
-        std::fs::remove_file(track.path()); 
-    }
+use std::fs;
+
+let walker = globwalk::glob("*.{png,jpg,gif}")
+    .unwrap()
+    .max_depth(4)
+    .follow_links(true)
+    .into_iter()
+    .filter_map(Result::ok);
+for img in walker {
+    fs::remove_file(img.path()).unwrap();
 }
 ```
