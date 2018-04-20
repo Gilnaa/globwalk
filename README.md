@@ -1,7 +1,12 @@
 # GlobWalk #
+
+[![Build Status](https://travis-ci.org/Gilnaa/globwalk.svg?branch=master)](https://travis-ci.org/Gilnaa/globwalk)
+[![Build status](https://ci.appveyor.com/api/projects/status/81rkf5lcyt1ouh9n/branch/master?svg=true)](https://ci.appveyor.com/project/Gilnaa/globwalk)
+[![](https://docs.rs/globwalk/badge.svg)](https://docs.rs/globwalk/)
+
 Recursively find files in a directory using globs.
 
-Based on both `walkdir` &️ `globset` (❤), this crate inherits many goodies from
+Based on both `walkdir` & `ignore` (❤), this crate inherits many goodies from
 both, such as limiting search depth and amount of open file descriptors.
 
 Licensed under MIT.
@@ -43,7 +48,7 @@ for img in globwalk::glob("*.{png,jpg,gif}").unwrap() {
 ```
 
 
-### Example: Tweak walk options
+### Example: Tweak walk options ###
 
 ```rust,no_run
 extern crate globwalk;
@@ -56,6 +61,25 @@ let walker = globwalk::glob("*.{png,jpg,gif}")
     .follow_links(true)
     .into_iter()
     .filter_map(Result::ok);
+for img in walker {
+    fs::remove_file(img.path()).unwrap();
+}
+```
+
+### Example: Advanced Globbing ###
+
+By using one of the constructors of `globwalk::GlobWalker`, it is possible to alter the base-directory or add multiple patterns.
+
+```rust,no_run
+extern crate globwalk;
+
+use std::fs;
+
+let walker = globwalk::GlobWalker::from_patterns(BASE_DIR, &["*.{png,jpg,gif}", "!Pictures/*"])
+    .unwrap()
+    .into_iter()
+    .filter_map(Result::ok);
+    
 for img in walker {
     fs::remove_file(img.path()).unwrap();
 }

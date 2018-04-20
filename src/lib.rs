@@ -248,6 +248,7 @@ impl Iterator for IntoIter {
                             Match::Whitelist(_) => false,
                         }
                     };
+
                     if is_requested {
                         return Some(Ok(e));
                     }
