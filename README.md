@@ -31,8 +31,6 @@ To use this crate, add `globwalk` as a dependency to your project's `Cargo.toml`
 globwalk = "0.1"
 ```
 
-### Example ###
-
 The following piece of code recursively find all mp3 and FLAC files:
 
 ```rust,no_run
@@ -47,40 +45,4 @@ for img in globwalk::glob("*.{png,jpg,gif}").unwrap() {
 }
 ```
 
-
-### Example: Tweak walk options ###
-
-```rust,no_run
-extern crate globwalk;
-
-use std::fs;
-
-let walker = globwalk::glob("*.{png,jpg,gif}")
-    .unwrap()
-    .max_depth(4)
-    .follow_links(true)
-    .into_iter()
-    .filter_map(Result::ok);
-for img in walker {
-    fs::remove_file(img.path()).unwrap();
-}
-```
-
-### Example: Advanced Globbing ###
-
-By using one of the constructors of `globwalk::GlobWalker`, it is possible to alter the base-directory or add multiple patterns.
-
-```rust,no_run
-extern crate globwalk;
-
-use std::fs;
-
-let walker = globwalk::GlobWalker::from_patterns(BASE_DIR, &["*.{png,jpg,gif}", "!Pictures/*"])
-    .unwrap()
-    .into_iter()
-    .filter_map(Result::ok);
-    
-for img in walker {
-    fs::remove_file(img.path()).unwrap();
-}
-```
+See the [documentation](https://docs.rs/globwalk/) for more details.
