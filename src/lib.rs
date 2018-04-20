@@ -83,28 +83,28 @@
 //! ```
 
 extern crate ignore;
-extern crate walkdir;
 
 #[cfg(test)]
 extern crate tempdir;
 
-use ignore::gitignore::{Gitignore, GitignoreBuilder};
-use ignore::Match;
+use std::ffi::OsStr;
 use std::cmp::Ordering;
-use std::path::Path;
-use walkdir::{DirEntry, WalkDir};
+use std::path::{Path, PathBuf};
+
+use ignore::overrides::OverrideBuilder;
+use ignore::{DirEntry, Walk, WalkBuilder};
 
 /// Error from parsing globs.
 pub type GlobError = ignore::Error;
 /// Error from iterating on files.
-pub type WalkError = walkdir::Error;
+pub type WalkError = ignore::Error;
 
 /// An iterator for recursively yielding glob matches.
 ///
 /// The order of elements yielded by this iterator is unspecified.
 pub struct GlobWalker {
-    ignore: Gitignore,
-    walker: WalkDir,
+    walker: WalkBuilder,
+    base_dir: PathBuf,
 }
 
 impl GlobWalker {
@@ -129,33 +129,17 @@ impl GlobWalker {
         P: AsRef<Path>,
         S: AsRef<str>,
     {
-        let mut builder = GitignoreBuilder::new(base.as_ref());
+        let base = base.as_ref();
+        let mut builder = OverrideBuilder::new(base);
         for pattern in patterns {
-            builder.add_line(None, pattern.as_ref())?;
+            builder.add(pattern.as_ref())?;
         }
-        let ignore = builder.build()?;
+        let globs = builder.build()?;
+        let base_dir = globs.path().to_owned();
+        let mut walker = WalkBuilder::new(&base);
+        walker.overrides(globs).standard_filters(false);
 
-        Ok(Self::from_ignore(ignore))
-    }
-
-    /// Construct a new `GlobWalker` from a GlobSet
-    ///
-    /// When iterated, the base directory will be recursively searched for paths
-    /// matching `glob`.
-    fn from_ignore(ignore: Gitignore) -> Self {
-        GlobWalker {
-            walker: WalkDir::new(ignore.path()),
-            ignore,
-        }
-    }
-    /// Set the minimum depth of entries yielded by the iterator.
-    ///
-    /// The smallest depth is `0` and always corresponds to the path given
-    /// to the `new` function on this type. Its direct descendents have depth
-    /// `1`, and their descendents have depth `2`, and so on.
-    pub fn min_depth(mut self, depth: usize) -> Self {
-        self.walker = self.walker.min_depth(depth);
-        self
+        Ok(Self { walker, base_dir })
     }
 
     /// Set the maximum depth of entries yield by the iterator.
@@ -168,7 +152,7 @@ impl GlobWalker {
     /// it will actually avoid descending into directories when the depth is
     /// exceeded.
     pub fn max_depth(mut self, depth: usize) -> Self {
-        self.walker = self.walker.max_depth(depth);
+        self.walker.max_depth(Some(depth));
         self
     }
 
@@ -184,37 +168,7 @@ impl GlobWalker {
     ///
     /// [`DirEntry`]: struct.DirEntry.html
     pub fn follow_links(mut self, yes: bool) -> Self {
-        self.walker = self.walker.follow_links(yes);
-        self
-    }
-
-    /// Set the maximum number of simultaneously open file descriptors used
-    /// by the iterator.
-    ///
-    /// `n` must be greater than or equal to `1`. If `n` is `0`, then it is set
-    /// to `1` automatically. If this is not set, then it defaults to some
-    /// reasonably low number.
-    ///
-    /// This setting has no impact on the results yielded by the iterator
-    /// (even when `n` is `1`). Instead, this setting represents a trade off
-    /// between scarce resources (file descriptors) and memory. Namely, when
-    /// the maximum number of file descriptors is reached and a new directory
-    /// needs to be opened to continue iteration, then a previous directory
-    /// handle is closed and has its unyielded entries stored in memory. In
-    /// practice, this is a satisfying trade off because it scales with respect
-    /// to the *depth* of your file tree. Therefore, low values (even `1`) are
-    /// acceptable.
-    ///
-    /// Note that this value does not impact the number of system calls made by
-    /// an exhausted iterator.
-    ///
-    /// # Platform behavior
-    ///
-    /// On Windows, if `follow_links` is enabled, then this limit is not
-    /// respected. In particular, the maximum number of file descriptors opened
-    /// is proportional to the depth of the directory tree traversed.
-    pub fn max_open(mut self, n: usize) -> Self {
-        self.walker = self.walker.max_open(n);
+        self.walker.follow_links(yes);
         self
     }
 
@@ -225,24 +179,9 @@ impl GlobWalker {
     /// entries from the same directory.
     pub fn sort_by<F>(mut self, cmp: F) -> Self
     where
-        F: FnMut(&DirEntry, &DirEntry) -> Ordering + Send + Sync + 'static,
+        F: Fn(&OsStr, &OsStr) -> Ordering + Send + Sync + 'static,
     {
-        self.walker = self.walker.sort_by(cmp);
-        self
-    }
-
-    /// Yield a directory's contents before the directory itself. By default,
-    /// this is disabled.
-    ///
-    /// When `yes` is `false` (as is the default), the directory is yielded
-    /// before its contents are read. This is useful when, e.g. you want to
-    /// skip processing of some directories.
-    ///
-    /// When `yes` is `true`, the iterator yields the contents of a directory
-    /// before yielding the directory itself. This is useful when, e.g. you
-    /// want to recursively delete a directory.
-    pub fn contents_first(mut self, yes: bool) -> Self {
-        self.walker = self.walker.contents_first(yes);
+        self.walker.sort_by_file_name(cmp);
         self
     }
 }
@@ -253,8 +192,8 @@ impl IntoIterator for GlobWalker {
 
     fn into_iter(self) -> Self::IntoIter {
         IntoIter {
-            ignore: self.ignore,
-            walker: self.walker.into_iter(),
+            walker: self.walker.build(),
+            base_dir: self.base_dir,
         }
     }
 }
@@ -267,8 +206,8 @@ impl IntoIterator for GlobWalker {
 /// The order of the yielded paths is undefined, unless specified by the user
 /// using `GlobWalker::sort_by`.
 pub struct IntoIter {
-    ignore: Gitignore,
-    walker: walkdir::IntoIter,
+    walker: Walk,
+    base_dir: PathBuf,
 }
 
 impl Iterator for IntoIter {
@@ -276,34 +215,18 @@ impl Iterator for IntoIter {
 
     // Possible optimization - Do not descend into directory that will never be a match
     fn next(&mut self) -> Option<Self::Item> {
-        for entry in &mut self.walker {
-            match entry {
-                Ok(e) => {
-                    if is_requested(&self.ignore, &e) {
-                        return Some(Ok(e));
-                    }
-                }
-                Err(e) => {
-                    return Some(Err(e));
+        match self.walker.next() {
+            Some(Ok(entry)) => {
+                if entry.path() == self.base_dir {
+                    self.walker.next()
+                } else {
+                    println!("entry={:?}", entry.path());
+                    Some(Ok(entry))
                 }
             }
+            entry => entry,
         }
-
-        None
     }
-}
-
-fn is_requested(ignore: &Gitignore, entry: &walkdir::DirEntry) -> bool {
-    // Strip the common base directory so that the matcher will be
-    // able to recognize the file name.
-    // `unwrap` here is safe, since walkdir returns the files with relation
-    // to the given base-dir.
-    let rel_path = entry.path().strip_prefix(ignore.path()).unwrap();
-    let is_dir = entry.file_type().is_dir();
-    return match ignore.matched_path_or_any_parents(rel_path, is_dir) {
-        Match::None | Match::Whitelist(_) => false,
-        Match::Ignore(_) => true,
-    };
 }
 
 /// Construct a new `GlobWalker` with a glob pattern.
@@ -357,7 +280,7 @@ mod tests {
             let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
                 idx
             } else {
-                panic!("Iterated file is unexpected: {}", path);
+                panic!("Iterated file is unexpected: `{}`", path);
             };
             expected.remove(del_idx);
         }
@@ -420,7 +343,7 @@ mod tests {
             let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
                 idx
             } else {
-                panic!("Iterated file is unexpected: {}", path);
+                panic!("Iterated file is unexpected: `{}`", path);
             };
             expected.remove(del_idx);
         }
@@ -465,7 +388,7 @@ mod tests {
             let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
                 idx
             } else {
-                panic!("Iterated file is unexpected: {}", path);
+                panic!("Iterated file is unexpected: `{}`", path);
             };
             expected.remove(del_idx);
         }
@@ -533,7 +456,7 @@ mod tests {
             let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
                 idx
             } else {
-                panic!("Iterated file is unexpected: {}", path);
+                panic!("Iterated file is unexpected: `{}`", path);
             };
             expected.remove(del_idx);
         }
@@ -582,7 +505,7 @@ mod tests {
             let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
                 idx
             } else {
-                panic!("Iterated file is unexpected: {}", path);
+                panic!("Iterated file is unexpected: `{}`", path);
             };
             expected.remove(del_idx);
         }

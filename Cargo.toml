@@ -14,7 +14,6 @@ travis-ci = { repository = "Gilnaa/globwalk" }
 appveyor  = { repository = "Gilnaa/globwalk" }
 
 [dependencies]
-walkdir = "2"
 ignore = "0.4"
 
 [dev-dependencies]
