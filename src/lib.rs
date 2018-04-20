@@ -279,20 +279,7 @@ impl Iterator for IntoIter {
         for entry in &mut self.walker {
             match entry {
                 Ok(e) => {
-                    // Strip the common base directory so that the matcher will be
-                    // able to recognize the file name.
-                    // `unwrap` here is safe, since walkdir returns the files with relation
-                    // to the given base-dir.
-                    let is_requested = {
-                        let rel_path = e.path().strip_prefix(self.ignore.path()).unwrap();
-                        let is_dir = e.file_type().is_dir();
-                        match self.ignore.matched_path_or_any_parents(rel_path, is_dir) {
-                            Match::None | Match::Whitelist(_) => false,
-                            Match::Ignore(_) => true,
-                        }
-                    };
-
-                    if is_requested {
+                    if is_requested(&self.ignore, &e) {
                         return Some(Ok(e));
                     }
                 }
@@ -304,6 +291,19 @@ impl Iterator for IntoIter {
 
         None
     }
+}
+
+fn is_requested(ignore: &Gitignore, entry: &walkdir::DirEntry) -> bool {
+    // Strip the common base directory so that the matcher will be
+    // able to recognize the file name.
+    // `unwrap` here is safe, since walkdir returns the files with relation
+    // to the given base-dir.
+    let rel_path = entry.path().strip_prefix(ignore.path()).unwrap();
+    let is_dir = entry.file_type().is_dir();
+    return match ignore.matched_path_or_any_parents(rel_path, is_dir) {
+        Match::None | Match::Whitelist(_) => false,
+        Match::Ignore(_) => true,
+    };
 }
 
 /// Construct a new `GlobWalker` with a glob pattern.
