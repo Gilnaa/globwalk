@@ -3,6 +3,8 @@
 [![Build Status](https://travis-ci.org/Gilnaa/globwalk.svg?branch=master)](https://travis-ci.org/Gilnaa/globwalk)
 [![Build status](https://ci.appveyor.com/api/projects/status/81rkf5lcyt1ouh9n/branch/master?svg=true)](https://ci.appveyor.com/project/Gilnaa/globwalk)
 [![](https://docs.rs/globwalk/badge.svg)](https://docs.rs/globwalk/)
+![License](https://img.shields.io/crates/l/globwalk.svg)
+[![crates.io](https://img.shields.io/crates/v/globwalk.svg)](https://crates.io/crates/globwalk)
 
 Recursively find files in a directory using globs.
 
