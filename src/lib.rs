@@ -88,11 +88,11 @@ extern crate walkdir;
 #[cfg(test)]
 extern crate tempdir;
 
-use std::path::Path;
-use std::cmp::Ordering;
-use ignore::Match;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
-use walkdir::{WalkDir, DirEntry};
+use ignore::Match;
+use std::cmp::Ordering;
+use std::path::Path;
+use walkdir::{DirEntry, WalkDir};
 
 /// Error from parsing globs.
 pub type GlobError = ignore::Error;
@@ -104,7 +104,7 @@ pub type WalkError = walkdir::Error;
 /// The order of elements yielded by this iterator is unspecified.
 pub struct GlobWalker {
     ignore: Gitignore,
-    walker: WalkDir
+    walker: WalkDir,
 }
 
 impl GlobWalker {
@@ -224,7 +224,8 @@ impl GlobWalker {
     /// paths in sorted order. The compare function will be called to compare
     /// entries from the same directory.
     pub fn sort_by<F>(mut self, cmp: F) -> Self
-        where F: FnMut(&DirEntry, &DirEntry) -> Ordering + Send + Sync + 'static
+    where
+        F: FnMut(&DirEntry, &DirEntry) -> Ordering + Send + Sync + 'static,
     {
         self.walker = self.walker.sort_by(cmp);
         self
@@ -253,7 +254,7 @@ impl IntoIterator for GlobWalker {
     fn into_iter(self) -> Self::IntoIter {
         IntoIter {
             ignore: self.ignore,
-            walker: self.walker.into_iter()
+            walker: self.walker.into_iter(),
         }
     }
 }
@@ -286,16 +287,15 @@ impl Iterator for IntoIter {
                         let rel_path = e.path().strip_prefix(self.ignore.path()).unwrap();
                         let is_dir = e.file_type().is_dir();
                         match self.ignore.matched_path_or_any_parents(rel_path, is_dir) {
-                            Match::None => false,
+                            Match::None | Match::Whitelist(_) => false,
                             Match::Ignore(_) => true,
-                            Match::Whitelist(_) => false,
                         }
                     };
 
                     if is_requested {
                         return Some(Ok(e));
                     }
-                },
+                }
                 Err(e) => {
                     return Some(Err(e));
                 }
@@ -314,12 +314,11 @@ pub fn glob<S: AsRef<str>>(pattern: S) -> Result<GlobWalker, GlobError> {
     GlobWalker::new(".", pattern)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ::tempdir::TempDir;
-    use ::std::fs::{File, create_dir_all};
+    use std::fs::{create_dir_all, File};
+    use tempdir::TempDir;
 
     fn touch(dir: &TempDir, names: &[&str]) {
         for name in names {
@@ -329,7 +328,8 @@ mod tests {
     }
 
     fn normalize_path_sep<S: AsRef<str>>(s: S) -> String {
-        s.as_ref().replace("[/]", if cfg!(windows) {"\\"} else {"/"})
+        s.as_ref()
+            .replace("[/]", if cfg!(windows) { "\\" } else { "/" })
     }
 
     #[test]
@@ -337,21 +337,21 @@ mod tests {
         let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
         let dir_path = dir.path();
 
-        touch(&dir, &[
-            "a.rs",
-            "a.jpg",
-            "a.png",
-            "b.docx",
-        ][..]);
-
+        touch(&dir, &["a.rs", "a.jpg", "a.png", "b.docx"][..]);
 
         let mut expected = vec!["a.jpg", "a.png"];
 
         for matched_file in GlobWalker::new(dir_path, "*.{png,jpg,gif}")
-                                        .unwrap()
-                                        .into_iter()
-                                        .filter_map(Result::ok) {
-            let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();
+            .unwrap()
+            .into_iter()
+            .filter_map(Result::ok)
+        {
+            let path = matched_file
+                .path()
+                .strip_prefix(dir_path)
+                .unwrap()
+                .to_str()
+                .unwrap();
             let path = normalize_path_sep(path);
 
             let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
@@ -374,35 +374,47 @@ mod tests {
         create_dir_all(dir_path.join("tests")).expect("");
         create_dir_all(dir_path.join("contrib")).expect("");
 
-        touch(&dir, &[
-            "a.rs",
-            "b.rs",
-            "avocado.rs",
-            "lib.c",
-            "src[/]hello.rs",
-            "src[/]world.rs",
+        touch(
+            &dir,
+            &[
+                "a.rs",
+                "b.rs",
+                "avocado.rs",
+                "lib.c",
+                "src[/]hello.rs",
+                "src[/]world.rs",
+                "src[/]some_mod[/]unexpected.rs",
+                "src[/]cruel.txt",
+                "contrib[/]README.md",
+                "contrib[/]README.rst",
+                "contrib[/]lib.rs",
+            ][..],
+        );
+
+        let mut expected: Vec<_> = [
             "src[/]some_mod[/]unexpected.rs",
-            "src[/]cruel.txt",
+            "src[/]world.rs",
+            "src[/]hello.rs",
+            "lib.c",
+            "contrib[/]lib.rs",
             "contrib[/]README.md",
             "contrib[/]README.rst",
-            "contrib[/]lib.rs",
-        ][..]);
-
-
-        let mut expected: Vec<_> = ["src[/]some_mod[/]unexpected.rs",
-                                    "src[/]world.rs",
-                                    "src[/]hello.rs",
-                                    "lib.c",
-                                    "contrib[/]lib.rs",
-                                    "contrib[/]README.md",
-                                    "contrib[/]README.rst"].iter().map(normalize_path_sep).collect();
+        ].iter()
+            .map(normalize_path_sep)
+            .collect();
 
         let patterns = ["src/**/*.rs", "*.c", "**/lib.rs", "**/*.{md,rst}"];
         for matched_file in GlobWalker::from_patterns(dir_path, &patterns)
-                                        .unwrap()
-                                        .into_iter()
-                                        .filter_map(Result::ok) {
-            let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();
+            .unwrap()
+            .into_iter()
+            .filter_map(Result::ok)
+        {
+            let path = matched_file
+                .path()
+                .strip_prefix(dir_path)
+                .unwrap()
+                .to_str()
+                .unwrap();
             let path = normalize_path_sep(path);
 
             let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
@@ -425,34 +437,52 @@ mod tests {
         create_dir_all(dir_path.join("tests")).expect("");
         create_dir_all(dir_path.join("contrib")).expect("");
 
-        touch(&dir, &[
-            "a.rs",
-            "b.rs",
-            "avocado.rs",
-            "lib.c",
-            "src[/]hello.rs",
-            "src[/]world.rs",
+        touch(
+            &dir,
+            &[
+                "a.rs",
+                "b.rs",
+                "avocado.rs",
+                "lib.c",
+                "src[/]hello.rs",
+                "src[/]world.rs",
+                "src[/]some_mod[/]unexpected.rs",
+                "src[/]cruel.txt",
+                "contrib[/]README.md",
+                "contrib[/]README.rst",
+                "contrib[/]lib.rs",
+            ][..],
+        );
+
+        let mut expected: Vec<_> = [
             "src[/]some_mod[/]unexpected.rs",
-            "src[/]cruel.txt",
+            "src[/]hello.rs",
+            "lib.c",
+            "contrib[/]lib.rs",
             "contrib[/]README.md",
             "contrib[/]README.rst",
-            "contrib[/]lib.rs",
-        ][..]);
+        ].iter()
+            .map(normalize_path_sep)
+            .collect();
 
-
-        let mut expected: Vec<_> = ["src[/]some_mod[/]unexpected.rs",
-                                    "src[/]hello.rs",
-                                    "lib.c",
-                                    "contrib[/]lib.rs",
-                                    "contrib[/]README.md",
-                                    "contrib[/]README.rst"].iter().map(normalize_path_sep).collect();
-
-        let patterns = ["src/**/*.rs", "*.c", "**/lib.rs", "**/*.{md,rst}", "!world.rs"];
+        let patterns = [
+            "src/**/*.rs",
+            "*.c",
+            "**/lib.rs",
+            "**/*.{md,rst}",
+            "!world.rs",
+        ];
         for matched_file in GlobWalker::from_patterns(dir_path, &patterns)
-                                        .unwrap()
-                                        .into_iter()
-                                        .filter_map(Result::ok) {
-            let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();
+            .unwrap()
+            .into_iter()
+            .filter_map(Result::ok)
+        {
+            let path = matched_file
+                .path()
+                .strip_prefix(dir_path)
+                .unwrap()
+                .to_str()
+                .unwrap();
             let path = normalize_path_sep(path);
 
             let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
