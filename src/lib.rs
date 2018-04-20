@@ -291,6 +291,10 @@ impl Iterator for IntoIter {
     }
 }
 
+/// Construct a new `GlobWalker` with a glob pattern.
+///
+/// When iterated, the current directory will be recursively searched for paths
+/// matching `pattern`.
 pub fn glob<S: AsRef<str>>(pattern: S) -> Result<GlobWalker, GlobError> {
     GlobWalker::new(".", pattern)
 }
