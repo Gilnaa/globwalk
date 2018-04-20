@@ -1,3 +1,4 @@
+sudo: false
 language: rust
 rust:
   - 1.22.0  # Oldest supported
@@ -8,3 +9,13 @@ matrix:
   allow_failures:
     - rust: nightly
   fast_finish: true
+
+install:
+- rustc -Vv
+- cargo -V
+
+script:
+- cargo test --verbose
+
+cache:
+  cargo: true
