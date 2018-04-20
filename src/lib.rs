@@ -496,4 +496,53 @@ mod tests {
         let empty: &[&str] = &[][..];
         assert_eq!(expected, empty);
     }
+
+    #[test]
+    fn test_blacklist_dir() {
+        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir_path = dir.path();
+        create_dir_all(dir_path.join("Pictures")).expect("");
+
+        touch(
+            &dir,
+            &[
+                "a.png",
+                "b.png",
+                "c.png",
+                "Pictures[/]a.png",
+                "Pictures[/]b.png",
+                "Pictures[/]c.png",
+            ][..],
+        );
+
+        let mut expected: Vec<_> = ["a.png", "b.png", "c.png"]
+            .iter()
+            .map(normalize_path_sep)
+            .collect();
+
+        let patterns = ["*.{png,jpg,gif}", "!Pictures"];
+        for matched_file in GlobWalker::from_patterns(dir_path, &patterns)
+            .unwrap()
+            .into_iter()
+            .filter_map(Result::ok)
+        {
+            let path = matched_file
+                .path()
+                .strip_prefix(dir_path)
+                .unwrap()
+                .to_str()
+                .unwrap();
+            let path = normalize_path_sep(path);
+
+            let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
+                idx
+            } else {
+                panic!("Iterated file is unexpected: {}", path);
+            };
+            expected.remove(del_idx);
+        }
+
+        let empty: &[&str] = &[][..];
+        assert_eq!(expected, empty);
+    }
 }
