@@ -88,7 +88,7 @@ extern crate walkdir;
 #[cfg(test)]
 extern crate tempdir;
 
-use ignore::gitignore::{Gitignore, GitignoreBuilder};
+use ignore::overrides::{Override, OverrideBuilder};
 use ignore::Match;
 use std::cmp::Ordering;
 use std::path::Path;
@@ -103,7 +103,7 @@ pub type WalkError = walkdir::Error;
 ///
 /// The order of elements yielded by this iterator is unspecified.
 pub struct GlobWalker {
-    ignore: Gitignore,
+    ignore: Override,
     walker: WalkDir,
 }
 
@@ -129,9 +129,10 @@ impl GlobWalker {
         P: AsRef<Path>,
         S: AsRef<str>,
     {
-        let mut builder = GitignoreBuilder::new(base.as_ref());
+        let mut builder = OverrideBuilder::new(base.as_ref());
+
         for pattern in patterns {
-            builder.add_line(None, pattern.as_ref())?;
+            builder.add(pattern.as_ref())?;
         }
         let ignore = builder.build()?;
 
@@ -142,7 +143,7 @@ impl GlobWalker {
     ///
     /// When iterated, the base directory will be recursively searched for paths
     /// matching `glob`.
-    fn from_ignore(ignore: Gitignore) -> Self {
+    fn from_ignore(ignore: Override) -> Self {
         GlobWalker {
             walker: WalkDir::new(ignore.path()),
             ignore,
@@ -267,7 +268,7 @@ impl IntoIterator for GlobWalker {
 /// The order of the yielded paths is undefined, unless specified by the user
 /// using `GlobWalker::sort_by`.
 pub struct IntoIter {
-    ignore: Gitignore,
+    ignore: Override,
     walker: walkdir::IntoIter,
 }
 
@@ -276,30 +277,44 @@ impl Iterator for IntoIter {
 
     // Possible optimization - Do not descend into directory that will never be a match
     fn next(&mut self) -> Option<Self::Item> {
-        for entry in &mut self.walker {
-            match entry {
-                Ok(e) => {
-                    // Strip the common base directory so that the matcher will be
-                    // able to recognize the file name.
-                    // `unwrap` here is safe, since walkdir returns the files with relation
-                    // to the given base-dir.
-                    let is_requested = {
-                        let rel_path = e.path().strip_prefix(self.ignore.path()).unwrap();
-                        let is_dir = e.file_type().is_dir();
-                        match self.ignore.matched_path_or_any_parents(rel_path, is_dir) {
-                            Match::None | Match::Whitelist(_) => false,
-                            Match::Ignore(_) => true,
-                        }
-                    };
+        let mut skip_dir = false;
 
-                    if is_requested {
-                        return Some(Ok(e));
+        // The outer loop allows us to avoid multiple mutable borrows on `self.walker` when
+        // we want to skip.
+        'skipper: loop {
+            if skip_dir {
+                self.walker.skip_current_dir();
+            }
+
+            // The inner loop just advances the iterator until a match is found.
+            for entry in &mut self.walker {
+                match entry {
+                    Ok(e) => {
+                        let is_dir = e.file_type().is_dir();
+
+                        // Strip the common base directory so that the matcher will be
+                        // able to recognize the file name.
+                        // `unwrap` here is safe, since walkdir returns the files with relation
+                        // to the given base-dir.
+                        match self.ignore
+                            .matched(e.path().strip_prefix(self.ignore.path()).unwrap(), is_dir)
+                        {
+                            Match::Whitelist(_) => return Some(Ok(e)),
+                            // If the directory is ignored, quit the iterator loop and
+                            // skip-out of this directory.
+                            Match::Ignore(_) if is_dir => {
+                                skip_dir = true;
+                                continue 'skipper;
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(e) => {
+                        return Some(Err(e));
                     }
                 }
-                Err(e) => {
-                    return Some(Err(e));
-                }
             }
+            break;
         }
 
         None
