@@ -27,7 +27,9 @@
 //!
 //! [gitignore]: https://git-scm.com/docs/gitignore#_pattern_format
 //!
-//! # Example: Finding image files in the current directory.
+//! # Examples
+//!
+//! ## Finding image files in the current directory.
 //!
 //! ```no_run
 //! extern crate globwalk;
@@ -38,6 +40,45 @@
 //!     if let Ok(img) = img {
 //!         fs::remove_file(img.path()).unwrap();
 //!     }
+//! }
+//! ```
+//!
+//! ## Tweak walk options ###
+//!
+//! ```rust,no_run
+//! extern crate globwalk;
+//!
+//! use std::fs;
+//!
+//! let walker = globwalk::glob("*.{png,jpg,gif}")
+//!     .unwrap()
+//!     .max_depth(4)
+//!     .follow_links(true)
+//!     .into_iter()
+//!     .filter_map(Result::ok);
+//! for img in walker {
+//!     fs::remove_file(img.path()).unwrap();
+//! }
+//! ```
+//!
+//! ## Advanced Globbing ###
+//!
+//! By using one of the constructors of `globwalk::GlobWalker`, it is possible to alter the
+//! base-directory or add multiple patterns.
+//!
+//! ```rust,no_run
+//! extern crate globwalk;
+//!
+//! use std::fs;
+//!
+//! # let BASE_DIR = ".";
+//! let walker = globwalk::GlobWalker::from_patterns(BASE_DIR, &["*.{png,jpg,gif}", "!Pictures/*"])
+//!     .unwrap()
+//!     .into_iter()
+//!     .filter_map(Result::ok);
+//!
+//! for img in walker {
+//!     fs::remove_file(img.path()).unwrap();
 //! }
 //! ```
 
