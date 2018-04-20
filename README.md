@@ -18,10 +18,6 @@ Licensed under MIT.
  - `globwalk` supports excluding results with `!`.
  - `glob` searches for files in the current working directory, whereas `globwalk` starts at a specified base-dir.
 
-### Documentation ###
-
-[docs.rs/globwalk](https://docs.rs/globwalk/)
-
 ### Usage ###
 
 To use this crate, add `globwalk` as a dependency to your project's `Cargo.toml`:
