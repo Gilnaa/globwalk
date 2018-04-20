@@ -1,7 +1,8 @@
 # GlobWalk #
-A cross platform crate for recursively walking over paths matching a Glob pattern.
+Recursively find files in a directory using globs.
 
-Based on both `walkdir` &️ `globset` (❤), this crate inherits many goodies from both, such as limiting search depth and amount of open file descriptors. 
+Based on both `walkdir` &️ `globset` (❤), this crate inherits many goodies from
+both, such as limiting search depth and amount of open file descriptors.
 
 Licensed under MIT.
 
@@ -9,6 +10,7 @@ Licensed under MIT.
 
  - The `glob` crate does not support having `{a,b}` in patterns.
  - `globwalk` can match several glob-patterns at the same time.
+ - `globwalk` supports excluding results with `!`.
  - `glob` searches for files in the current working directory, whereas `globwalk` starts at a specified base-dir.
 
 ### Documentation ###
@@ -28,16 +30,14 @@ globwalk = "0.1"
 
 The following piece of code recursively find all mp3 and FLAC files:
 
-```rust
+```rust,no_run
 extern crate globwalk;
-use globwalk::GlobWalker;
 
-fn search_and_destroy() {
-    for track in GlobWalker::new("**/*.{mp3,flac}").unwrap() {
-        if let Ok(track) = track {
-            // Destroy satanic rhythms
-            std::fs::remove_file(track.path());
-        } 
+use std::fs;
+
+for img in globwalk::glob("*.{png,jpg,gif}").unwrap() {
+    if let Ok(img) = img {
+        fs::remove_file(img.path()).unwrap();
     }
 }
 ```
@@ -45,21 +45,18 @@ fn search_and_destroy() {
 
 ### Example: Tweak walk options
 
-```rust
+```rust,no_run
 extern crate globwalk;
-use globwalk::GlobWalker;
 
-fn search_and_destroy() {
-    let walker = GlobWalker::new("**/*.{mp3,flac}")
-                    .unwrap()
-                    .max_depth(4)
-                    .follow_links(true)
-                    .into_iter()
-                    .filter_map(Result::ok);
-                    
-    for track in walker {
-        // Destroy symbolic satanic rhythms, but do not stray far.
-        std::fs::remove_file(track.path()); 
-    }
+use std::fs;
+
+let walker = globwalk::glob("*.{png,jpg,gif}")
+    .unwrap()
+    .max_depth(4)
+    .follow_links(true)
+    .into_iter()
+    .filter_map(Result::ok);
+for img in walker {
+    fs::remove_file(img.path()).unwrap();
 }
 ```

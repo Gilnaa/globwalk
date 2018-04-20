@@ -11,7 +11,7 @@ keywords = ["regex", "glob", "pattern", "walk", "iterator"]
 
 [dependencies]
 walkdir = "2"
-globset = "0.2"
+ignore = "0.4"
 
 [dev-dependencies]
 tempdir = "0.3"
