@@ -61,15 +61,7 @@ type WalkError = walkdir::Error;
 /// The order of elements yielded by this iterator is unspecified.
 pub struct GlobWalker {
     ignore: Gitignore,
-
-    min_depth: usize,
-    max_depth: usize,
-    follow_links: bool,
-    max_open: usize,
-    sort_by: Option<Box<
-        FnMut(&DirEntry,&DirEntry) -> Ordering + Send + Sync + 'static
-    >>,
-    contents_first: bool,
+    walker: WalkDir
 }
 
 impl GlobWalker {
@@ -109,13 +101,8 @@ impl GlobWalker {
     /// matching `glob`.
     fn from_ignore(ignore: Gitignore) -> Self {
         GlobWalker {
+            walker: WalkDir::new(ignore.path()),
             ignore,
-            follow_links: false,
-            max_open: 10,
-            min_depth: 0,
-            max_depth: ::std::usize::MAX,
-            sort_by: None,
-            contents_first: false,
         }
     }
     /// Set the minimum depth of entries yielded by the iterator.
@@ -124,7 +111,7 @@ impl GlobWalker {
     /// to the `new` function on this type. Its direct descendents have depth
     /// `1`, and their descendents have depth `2`, and so on.
     pub fn min_depth(mut self, depth: usize) -> Self {
-        self.min_depth = depth;
+        self.walker = self.walker.min_depth(depth);
         self
     }
 
@@ -138,7 +125,7 @@ impl GlobWalker {
     /// it will actually avoid descending into directories when the depth is
     /// exceeded.
     pub fn max_depth(mut self, depth: usize) -> Self {
-        self.max_depth = depth;
+        self.walker = self.walker.max_depth(depth);
         self
     }
 
@@ -154,7 +141,7 @@ impl GlobWalker {
     ///
     /// [`DirEntry`]: struct.DirEntry.html
     pub fn follow_links(mut self, yes: bool) -> Self {
-        self.follow_links = yes;
+        self.walker = self.walker.follow_links(yes);
         self
     }
 
@@ -184,22 +171,21 @@ impl GlobWalker {
     /// respected. In particular, the maximum number of file descriptors opened
     /// is proportional to the depth of the directory tree traversed.
     pub fn max_open(mut self, n: usize) -> Self {
-        self.max_open = n;
+        self.walker = self.walker.max_open(n);
         self
     }
 
-// FIXME: See next FIXME
-//    /// Set a function for sorting directory entries.
-//    ///
-//    /// If a compare function is set, the resulting iterator will return all
-//    /// paths in sorted order. The compare function will be called to compare
-//    /// entries from the same directory.
-//    pub fn sort_by<F>(mut self, cmp: F) -> Self
-//        where F: FnMut(&DirEntry, &DirEntry) -> Ordering + Send + Sync + 'static
-//    {
-//        self.sort_by = Some(Box::new(cmp));
-//        self
-//    }
+    /// Set a function for sorting directory entries.
+    ///
+    /// If a compare function is set, the resulting iterator will return all
+    /// paths in sorted order. The compare function will be called to compare
+    /// entries from the same directory.
+    pub fn sort_by<F>(mut self, cmp: F) -> Self
+        where F: FnMut(&DirEntry, &DirEntry) -> Ordering + Send + Sync + 'static
+    {
+        self.walker = self.walker.sort_by(cmp);
+        self
+    }
 
     /// Yield a directory's contents before the directory itself. By default,
     /// this is disabled.
@@ -212,7 +198,7 @@ impl GlobWalker {
     /// before yielding the directory itself. This is useful when, e.g. you
     /// want to recursively delete a directory.
     pub fn contents_first(mut self, yes: bool) -> Self {
-        self.contents_first = yes;
+        self.walker = self.walker.contents_first(yes);
         self
     }
 }
@@ -222,24 +208,9 @@ impl IntoIterator for GlobWalker {
     type IntoIter = IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        let walker = WalkDir::new(self.ignore.path())
-            .min_depth(self.min_depth)
-            .max_depth(self.max_depth)
-            .max_open(self.max_open)
-            .follow_links(self.follow_links)
-            .contents_first(self.contents_first);
-
-        // FIXME: This cannot compile right now.
-        // let walker = if let Some(sorter) = self.sort_by.take() {
-        //     walker.sort_by(move |a, b| sorter(a, b))
-        // }
-        // else {
-        //     walker
-        // };
-
         IntoIter {
             ignore: self.ignore,
-            walker: walker.into_iter()
+            walker: self.walker.into_iter()
         }
     }
 }
@@ -337,9 +308,7 @@ mod tests {
                                         .into_iter()
                                         .filter_map(Result::ok) {
             let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();
-            let path = path.replace("[/]", if cfg!(windows) {"\\"} else {"/"});
-
-            println!("path = {}", path);
+            let path = normalize_path_sep(path);
 
             let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
                 idx
@@ -390,9 +359,7 @@ mod tests {
                                         .into_iter()
                                         .filter_map(Result::ok) {
             let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();
-            let path = path.replace("[/]", if cfg!(windows) {"\\"} else {"/"});
-
-            println!("path = {}", path);
+            let path = normalize_path_sep(path);
 
             let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
                 idx
@@ -442,9 +409,7 @@ mod tests {
                                         .into_iter()
                                         .filter_map(Result::ok) {
             let path = matched_file.path().strip_prefix(dir_path).unwrap().to_str().unwrap();
-            let path = path.replace("[/]", if cfg!(windows) {"\\"} else {"/"});
-
-            println!("path = {}", path);
+            let path = normalize_path_sep(path);
 
             let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
                 idx
