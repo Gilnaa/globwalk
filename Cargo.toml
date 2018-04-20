@@ -19,3 +19,4 @@ ignore = "0.4"
 
 [dev-dependencies]
 tempdir = "0.3"
+docmatic = "0.1"
