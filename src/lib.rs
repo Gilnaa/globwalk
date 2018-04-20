@@ -53,8 +53,10 @@ use ignore::Match;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use walkdir::{WalkDir, DirEntry};
 
-type GlobError = ignore::Error;
-type WalkError = walkdir::Error;
+/// Error from parsing globs.
+pub type GlobError = ignore::Error;
+/// Error from iterating on files.
+pub type WalkError = walkdir::Error;
 
 /// An iterator for recursively yielding glob matches.
 ///
