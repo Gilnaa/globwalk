@@ -31,34 +31,45 @@
 //!
 //! ## Finding image files in the current directory.
 //!
-//! ```no_run
+//! ```rust
 //! extern crate globwalk;
+//! # include!("doctests.rs");
 //!
 //! use std::fs;
+//! # fn run() -> Result<(), Box<::std::error::Error>> {
+//! # let temp_dir = create_files(&["cow.jog", "cat.gif"])?;
+//! # ::std::env::set_current_dir(&temp_dir)?;
 //!
-//! for img in globwalk::glob("*.{png,jpg,gif}").unwrap() {
+//! for img in globwalk::glob("*.{png,jpg,gif}")? {
 //!     if let Ok(img) = img {
-//!         fs::remove_file(img.path()).unwrap();
+//!         fs::remove_file(img.path())?;
 //!     }
 //! }
+//! # Ok(()) }
+//! # fn main() { run().unwrap() }
 //! ```
 //!
 //! ## Tweak walk options ###
 //!
-//! ```rust,no_run
+//! ```rust
 //! extern crate globwalk;
+//! # include!("doctests.rs");
 //!
 //! use std::fs;
 //!
-//! let walker = globwalk::glob("*.{png,jpg,gif}")
-//!     .unwrap()
+//! # fn run() -> Result<(), Box<::std::error::Error>> {
+//! # let temp_dir = create_files(&["cow.jog", "cat.gif"])?;
+//! # ::std::env::set_current_dir(&temp_dir)?;
+//! let walker = globwalk::glob("*.{png,jpg,gif}")?
 //!     .max_depth(4)
 //!     .follow_links(true)
 //!     .into_iter()
 //!     .filter_map(Result::ok);
 //! for img in walker {
-//!     fs::remove_file(img.path()).unwrap();
+//!     fs::remove_file(img.path())?;
 //! }
+//! # Ok(()) }
+//! # fn main() { run().unwrap() }
 //! ```
 //!
 //! ## Advanced Globbing ###
@@ -66,20 +77,27 @@
 //! By using one of the constructors of `globwalk::GlobWalker`, it is possible to alter the
 //! base-directory or add multiple patterns.
 //!
-//! ```rust,no_run
+//! ```rust
 //! extern crate globwalk;
+//! # include!("doctests.rs");
 //!
 //! use std::fs;
 //!
-//! # let BASE_DIR = ".";
-//! let walker = globwalk::GlobWalker::from_patterns(BASE_DIR, &["*.{png,jpg,gif}", "!Pictures/*"])
-//!     .unwrap()
+//! # fn run() -> Result<(), Box<::std::error::Error>> {
+//! # let temp_dir = create_files(&["cow.jog", "cat.gif"])?;
+//! # let BASE_DIR = &temp_dir;
+//! let walker = globwalk::GlobWalker::from_patterns(
+//!         BASE_DIR,
+//!         &["*.{png,jpg,gif}", "!Pictures/*"],
+//!     )?
 //!     .into_iter()
 //!     .filter_map(Result::ok);
 //!
 //! for img in walker {
-//!     fs::remove_file(img.path()).unwrap();
+//!     fs::remove_file(img.path())?;
 //! }
+//! # Ok(()) }
+//! # fn main() { run().unwrap() }
 //! ```
 
 extern crate ignore;
