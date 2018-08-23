@@ -100,6 +100,8 @@
 //! # fn main() { run().unwrap() }
 //! ```
 
+#![warn(missing_docs)]
+
 extern crate ignore;
 extern crate walkdir;
 
