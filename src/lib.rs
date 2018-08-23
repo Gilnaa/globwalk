@@ -112,12 +112,16 @@ use ignore::overrides::{Override, OverrideBuilder};
 use ignore::Match;
 use std::cmp::Ordering;
 use std::path::Path;
-use walkdir::{DirEntry, WalkDir};
+use walkdir::WalkDir;
 
 /// Error from parsing globs.
 pub type GlobError = ignore::Error;
 /// Error from iterating on files.
 pub type WalkError = walkdir::Error;
+/// A directory entry.
+///
+/// This is the type of value that is yielded from the iterators defined in this crate.
+pub type DirEntry = walkdir::DirEntry;
 
 /// An iterator for recursively yielding glob matches.
 ///
