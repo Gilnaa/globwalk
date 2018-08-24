@@ -115,13 +115,43 @@ use std::path::Path;
 use walkdir::WalkDir;
 
 /// Error from parsing globs.
-pub type GlobError = ignore::Error;
+#[derive(Debug)]
+pub struct GlobError(ignore::Error);
 /// Error from iterating on files.
 pub type WalkError = walkdir::Error;
 /// A directory entry.
 ///
 /// This is the type of value that is yielded from the iterators defined in this crate.
 pub type DirEntry = walkdir::DirEntry;
+
+impl From<std::io::Error> for GlobError {
+    fn from(e: std::io::Error) -> Self {
+        GlobError(e.into())
+    }
+}
+
+impl From<GlobError> for std::io::Error {
+    fn from(e: GlobError) -> Self {
+        if let ignore::Error::Io(e) = e.0 {
+            e
+        }
+        else {
+            std::io::ErrorKind::Other.into()
+        }
+    }
+}
+
+impl std::fmt::Display for GlobError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        self.0.fmt(f)
+    }
+}
+
+impl std::error::Error for GlobError {
+    fn description(&self) -> &str {
+        self.0.description()
+    }
+}
 
 /// An iterator for recursively yielding glob matches.
 ///
@@ -156,9 +186,9 @@ impl GlobWalker {
         let mut builder = OverrideBuilder::new(base.as_ref());
 
         for pattern in patterns {
-            builder.add(pattern.as_ref())?;
+            builder.add(pattern.as_ref()).map_err(GlobError)?;
         }
-        let ignore = builder.build()?;
+        let ignore = builder.build().map_err(GlobError)?;
 
         Ok(Self::from_ignore(ignore))
     }
