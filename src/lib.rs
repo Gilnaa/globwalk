@@ -291,10 +291,8 @@ impl GlobWalkerBuilder {
             builder.add(pattern.as_ref()).map_err(GlobError)?;
         }
 
-        let ignore = builder.build().map_err(GlobError)?;
-
         Ok(GlobWalker {
-            ignore: ignore,
+            ignore: builder.build().map_err(GlobError)?,
             walker: self.walker.into_iter(),
         })
     }
