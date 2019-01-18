@@ -362,9 +362,40 @@ impl Iterator for GlobWalker {
 /// Construct a new `GlobWalker` with a glob pattern.
 ///
 /// When iterated, the current directory will be recursively searched for paths
-/// matching `pattern`.
+/// matching `pattern`, unless the pattern specifies an absolute path.
 pub fn glob<S: AsRef<str>>(pattern: S) -> Result<GlobWalker, GlobError> {
-    GlobWalkerBuilder::new(".", pattern).build()
+    // Check to see if the pattern starts with an absolute path
+    let path_pattern: PathBuf = pattern.as_ref().into();
+    if path_pattern.is_absolute() {
+        // If the pattern is an absolute path, split it into the longest base and a pattern.
+        let mut base = PathBuf::new();
+        let mut pattern = PathBuf::new();
+        let mut globbing = false;
+
+        // All `to_str().unwrap()` calls should be valid since the input is a string.
+        for c in path_pattern.components() {
+            let os = c.as_os_str().to_str().unwrap();
+            for c in &["*", "{", "}"][..] {
+                if os.contains(c) {
+                    globbing = true;
+                    break;
+                }
+            }
+
+            if globbing {
+                pattern.push(c);
+            }
+            else {
+                base.push(c);
+            }
+        }
+
+        GlobWalkerBuilder::new(base.to_str().unwrap(), pattern.to_str().unwrap()).build()
+    }
+    else {
+        // If the pattern is relative, start searching from the current directory.
+        GlobWalkerBuilder::new(".", pattern).build()
+    }
 }
 
 #[cfg(test)]
@@ -383,6 +414,38 @@ mod tests {
     fn normalize_path_sep<S: AsRef<str>>(s: S) -> String {
         s.as_ref()
             .replace("[/]", if cfg!(windows) { "\\" } else { "/" })
+    }
+
+    #[test]
+    fn test_absolute_path() {
+        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir_path = dir.path();
+
+        touch(&dir, &["a.rs", "a.jpg", "a.png", "b.docx"][..]);
+
+        let mut expected = vec!["a.jpg", "a.png"];
+        let mut cwd = dir_path.canonicalize().unwrap();
+        cwd.push("*.{png,jpg,gif}");
+        for matched_file in glob(cwd.to_str().unwrap().to_owned())
+            .unwrap().into_iter().filter_map(Result::ok) {
+            let path = matched_file
+                .path()
+                .strip_prefix(dir_path)
+                .unwrap()
+                .to_str()
+                .unwrap();
+            let path = normalize_path_sep(path);
+
+            let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
+                idx
+            } else {
+                panic!("Iterated file is unexpected: {}", path);
+            };
+            expected.remove(del_idx);
+        }
+
+        let empty: &[&str] = &[][..];
+        assert_eq!(expected, empty);
     }
 
     #[test]
