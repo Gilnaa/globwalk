@@ -390,7 +390,12 @@ pub fn glob<S: AsRef<str>>(pattern: S) -> Result<GlobWalker, GlobError> {
             }
         }
 
-        GlobWalkerBuilder::new(base.to_str().unwrap(), pattern.to_str().unwrap()).build()
+        let pat = pattern.to_str().unwrap();
+        if cfg!(windows) {
+            GlobWalkerBuilder::new(base.to_str().unwrap(), pat.replace("\\", "/")).build()
+        } else {
+            GlobWalkerBuilder::new(base.to_str().unwrap(), pat).build()
+        }
     }
     else {
         // If the pattern is relative, start searching from the current directory.
@@ -780,7 +785,6 @@ mod tests {
         let mut cwd = dir_path.clone();
         cwd.push("**");
         cwd.push("*.{png,jpg,gif}");
-        println!("{:?}", cwd);
         for matched_file in glob(cwd.to_str().unwrap().to_owned())
             .unwrap().into_iter().filter_map(Result::ok) {
             let path = matched_file
