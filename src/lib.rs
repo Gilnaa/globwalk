@@ -390,7 +390,12 @@ pub fn glob<S: AsRef<str>>(pattern: S) -> Result<GlobWalker, GlobError> {
             }
         }
 
-        GlobWalkerBuilder::new(base.to_str().unwrap(), pattern.to_str().unwrap()).build()
+        let pat = pattern.to_str().unwrap();
+        if cfg!(windows) {
+            GlobWalkerBuilder::new(base.to_str().unwrap(), pat.replace("\\", "/")).build()
+        } else {
+            GlobWalkerBuilder::new(base.to_str().unwrap(), pat).build()
+        }
     }
     else {
         // If the pattern is relative, start searching from the current directory.
@@ -752,6 +757,39 @@ mod tests {
             let path = matched_file
                 .path()
                 .strip_prefix(dir_path)
+                .unwrap()
+                .to_str()
+                .unwrap();
+            let path = normalize_path_sep(path);
+
+            let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
+                idx
+            } else {
+                panic!("Iterated file is unexpected: {}", path);
+            };
+            expected.remove(del_idx);
+        }
+
+        let empty: &[&str] = &[][..];
+        assert_eq!(expected, empty);
+    }
+
+    #[test]
+    fn test_glob_with_double_star_pattern() {
+        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir_path = dir.path().canonicalize().unwrap();
+
+        touch(&dir, &["a.rs", "a.jpg", "a.png", "b.docx"][..]);
+
+        let mut expected = vec!["a.jpg", "a.png"];
+        let mut cwd = dir_path.clone();
+        cwd.push("**");
+        cwd.push("*.{png,jpg,gif}");
+        for matched_file in glob(cwd.to_str().unwrap().to_owned())
+            .unwrap().into_iter().filter_map(Result::ok) {
+            let path = matched_file
+                .path()
+                .strip_prefix(&dir_path)
                 .unwrap()
                 .to_str()
                 .unwrap();
