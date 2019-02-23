@@ -1,6 +1,6 @@
 [package]
 name = "globwalk"
-version = "0.6.0"
+version = "0.7.0"
 description = "Glob-matched recursive file system walking."
 authors = ["Gilad Naaman <gilad@naaman.io>"]
 readme = "README.md"

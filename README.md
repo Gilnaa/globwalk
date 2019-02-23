@@ -26,7 +26,7 @@ To use this crate, add `globwalk` as a dependency to your project's `Cargo.toml`
 
 ```toml
 [dependencies]
-globwalk = "0.6"
+globwalk = "0.7"
 ```
 
 The following piece of code recursively find all mp3 and FLAC files:
