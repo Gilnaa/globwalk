@@ -167,9 +167,19 @@ impl GlobWalkerBuilder {
         P: AsRef<Path>,
         S: AsRef<str>,
     {
+        fn normalize_pattern<S: AsRef<str>>(pattern: S) -> String {
+            // Either `ignore` or our iteration code treat a single asterisk pretty strangely, matching everything, even 
+            // paths that are inside a sub-direcrtory.
+            if pattern.as_ref() == "*" {
+                String::from("/*")
+            }
+            else {
+                pattern.as_ref().to_owned()
+            }
+        }
         GlobWalkerBuilder {
             root: base.as_ref().into(),
-            patterns: patterns.iter().map(|s| s.as_ref().to_owned()).collect::<_>(),
+            patterns: patterns.iter().map(normalize_pattern).collect::<_>(),
             walker: WalkDir::new(base),
             case_insensitive: false,
         }
@@ -334,8 +344,14 @@ impl Iterator for GlobWalker {
                         // able to recognize the file name.
                         // `unwrap` here is safe, since walkdir returns the files with relation
                         // to the given base-dir.
-                        match self.ignore
-                            .matched(e.path().strip_prefix(self.ignore.path()).unwrap(), is_dir)
+                        let path = e.path().strip_prefix(self.ignore.path()).unwrap().to_owned();
+
+                        // The path might be empty after stripping if the current base-directory is matched.
+                        if let Some("") = path.to_str(){
+                            continue 'skipper;
+                        }
+
+                        match self.ignore.matched(path, is_dir)
                         {
                             Match::Whitelist(_) => return Some(Ok(e)),
                             // If the directory is ignored, quit the iterator loop and
@@ -805,5 +821,57 @@ mod tests {
 
         let empty: &[&str] = &[][..];
         assert_eq!(expected, empty);
+    }
+
+     #[test]
+    fn test_glob_single_star() {
+        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir_path = dir.path();
+        create_dir_all(dir_path.join("Pictures")).expect("");
+        create_dir_all(dir_path.join("Pictures").join("b")).expect("");
+
+        touch(
+            &dir,
+            &[
+                "a.png",
+                "b.png",
+                "c.png",
+                "Pictures[/]a.png",
+                "Pictures[/]b.png",
+                "Pictures[/]c.png",
+                "Pictures[/]b[/]c.png",
+                "Pictures[/]b[/]c.png",
+                "Pictures[/]b[/]c.png",
+            ][..],
+        );
+
+        let mut builder = OverrideBuilder::new(dir_path);
+        builder.add("/*").unwrap();
+        let ignore =  builder.build().unwrap();
+
+        let mut actual = vec![];
+        for matched_file in GlobWalkerBuilder::new(dir_path, "*")
+            .sort_by(|a, b| a.path().cmp(b.path()))
+            .build().unwrap()
+            .into_iter()
+            .filter_map(Result::ok)
+        {
+            match ignore.matched(matched_file.path(), false) {
+                Match::Whitelist(_) => {
+                    println!("WL: {:?}", matched_file);
+                },
+                _ => {}
+            }
+
+            actual.push( matched_file
+                .path()
+                .strip_prefix(dir_path)
+                .unwrap()
+                .to_str()
+                .unwrap().to_owned());
+        }
+
+        assert_eq!(actual, vec!["Pictures", "a.png", "b.png", "c.png"]);
+
     }
 }
