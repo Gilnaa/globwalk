@@ -92,8 +92,8 @@ use ignore::overrides::{Override, OverrideBuilder};
 use ignore::Match;
 use std::cmp::Ordering;
 use std::path::Path;
-use walkdir::WalkDir;
 use std::path::PathBuf;
+use walkdir::WalkDir;
 
 /// Error from parsing globs.
 #[derive(Debug)]
@@ -115,8 +115,7 @@ impl From<GlobError> for std::io::Error {
     fn from(e: GlobError) -> Self {
         if let ignore::Error::Io(e) = e.0 {
             e
-        }
-        else {
+        } else {
             std::io::ErrorKind::Other.into()
         }
     }
@@ -142,7 +141,6 @@ pub struct GlobWalkerBuilder {
     patterns: Vec<String>,
     walker: WalkDir,
     case_insensitive: bool,
-//    ignore: Override,
 }
 
 impl GlobWalkerBuilder {
@@ -167,9 +165,18 @@ impl GlobWalkerBuilder {
         P: AsRef<Path>,
         S: AsRef<str>,
     {
+        fn normalize_pattern<S: AsRef<str>>(pattern: S) -> String {
+            // Either `ignore` or our iteration code treat a single asterisk pretty strangely, matching everything, even
+            // paths that are inside a sub-direcrtory.
+            if pattern.as_ref() == "*" {
+                String::from("/*")
+            } else {
+                pattern.as_ref().to_owned()
+            }
+        }
         GlobWalkerBuilder {
             root: base.as_ref().into(),
-            patterns: patterns.iter().map(|s| s.as_ref().to_owned()).collect::<_>(),
+            patterns: patterns.iter().map(normalize_pattern).collect::<_>(),
             walker: WalkDir::new(base),
             case_insensitive: false,
         }
@@ -285,7 +292,9 @@ impl GlobWalkerBuilder {
     pub fn build(self) -> Result<GlobWalker, GlobError> {
         let mut builder = OverrideBuilder::new(self.root);
 
-        builder.case_insensitive(self.case_insensitive).map_err(GlobError)?;
+        builder
+            .case_insensitive(self.case_insensitive)
+            .map_err(GlobError)?;
 
         for pattern in self.patterns {
             builder.add(pattern.as_ref()).map_err(GlobError)?;
@@ -334,9 +343,18 @@ impl Iterator for GlobWalker {
                         // able to recognize the file name.
                         // `unwrap` here is safe, since walkdir returns the files with relation
                         // to the given base-dir.
-                        match self.ignore
-                            .matched(e.path().strip_prefix(self.ignore.path()).unwrap(), is_dir)
-                        {
+                        let path = e
+                            .path()
+                            .strip_prefix(self.ignore.path())
+                            .unwrap()
+                            .to_owned();
+
+                        // The path might be empty after stripping if the current base-directory is matched.
+                        if let Some("") = path.to_str() {
+                            continue 'skipper;
+                        }
+
+                        match self.ignore.matched(path, is_dir) {
                             Match::Whitelist(_) => return Some(Ok(e)),
                             // If the directory is ignored, quit the iterator loop and
                             // skip-out of this directory.
@@ -384,8 +402,7 @@ pub fn glob<S: AsRef<str>>(pattern: S) -> Result<GlobWalker, GlobError> {
 
             if globbing {
                 pattern.push(c);
-            }
-            else {
+            } else {
                 base.push(c);
             }
         }
@@ -396,8 +413,7 @@ pub fn glob<S: AsRef<str>>(pattern: S) -> Result<GlobWalker, GlobError> {
         } else {
             GlobWalkerBuilder::new(base.to_str().unwrap(), pat).build()
         }
-    }
-    else {
+    } else {
         // If the pattern is relative, start searching from the current directory.
         GlobWalkerBuilder::new(".", pattern).build()
     }
@@ -432,7 +448,10 @@ mod tests {
         let mut cwd = dir_path.clone();
         cwd.push("*.{png,jpg,gif}");
         for matched_file in glob(cwd.to_str().unwrap().to_owned())
-            .unwrap().into_iter().filter_map(Result::ok) {
+            .unwrap()
+            .into_iter()
+            .filter_map(Result::ok)
+        {
             let path = matched_file
                 .path()
                 .strip_prefix(&dir_path)
@@ -463,7 +482,8 @@ mod tests {
         let mut expected = vec!["a.jpg", "a.png"];
 
         for matched_file in GlobWalkerBuilder::new(dir_path, "*.{png,jpg,gif}")
-            .build().unwrap()
+            .build()
+            .unwrap()
             .into_iter()
             .filter_map(Result::ok)
         {
@@ -520,31 +540,33 @@ mod tests {
             "contrib[/]lib.rs",
             "contrib[/]README.md",
             "contrib[/]README.rst",
-        ].iter()
-            .map(normalize_path_sep)
-            .collect();
+        ]
+        .iter()
+        .map(normalize_path_sep)
+        .collect();
 
         let patterns = ["src/**/*.rs", "*.c", "**/lib.rs", "**/*.{md,rst}"];
         for matched_file in GlobWalkerBuilder::from_patterns(dir_path, &patterns)
-            .build().unwrap()
+            .build()
+            .unwrap()
             .into_iter()
             .filter_map(Result::ok)
-            {
-                let path = matched_file
-                    .path()
-                    .strip_prefix(dir_path)
-                    .unwrap()
-                    .to_str()
-                    .unwrap();
-                let path = normalize_path_sep(path);
+        {
+            let path = matched_file
+                .path()
+                .strip_prefix(dir_path)
+                .unwrap()
+                .to_str()
+                .unwrap();
+            let path = normalize_path_sep(path);
 
-                let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
-                    idx
-                } else {
-                    panic!("Iterated file is unexpected: {}", path);
-                };
-                expected.remove(del_idx);
-            }
+            let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
+                idx
+            } else {
+                panic!("Iterated file is unexpected: {}", path);
+            };
+            expected.remove(del_idx);
+        }
 
         let empty: &[&str] = &[][..];
         assert_eq!(expected, empty);
@@ -583,30 +605,34 @@ mod tests {
             "contrib[/]lib.rs",
             "contrib[/]README.md",
             "contrib[/]README.rst",
-        ].iter()
-            .map(normalize_path_sep)
-            .collect();
+        ]
+        .iter()
+        .map(normalize_path_sep)
+        .collect();
 
         let patterns = ["src/**/*.rs", "*.c", "**/lib.rs", "**/*.{md,rst}"];
         for matched_file in GlobWalkerBuilder::from_patterns(dir_path, &patterns)
-            .case_insensitive(true).build().unwrap()
-            .into_iter().filter_map(Result::ok)
-            {
-                let path = matched_file
-                    .path()
-                    .strip_prefix(dir_path)
-                    .unwrap()
-                    .to_str()
-                    .unwrap();
-                let path = normalize_path_sep(path);
+            .case_insensitive(true)
+            .build()
+            .unwrap()
+            .into_iter()
+            .filter_map(Result::ok)
+        {
+            let path = matched_file
+                .path()
+                .strip_prefix(dir_path)
+                .unwrap()
+                .to_str()
+                .unwrap();
+            let path = normalize_path_sep(path);
 
-                let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
-                    idx
-                } else {
-                    panic!("Iterated file is unexpected: {}", path);
-                };
-                expected.remove(del_idx);
-            }
+            let del_idx = if let Some(idx) = expected.iter().position(|n| &path == n) {
+                idx
+            } else {
+                panic!("Iterated file is unexpected: {}", path);
+            };
+            expected.remove(del_idx);
+        }
 
         let empty: &[&str] = &[][..];
         assert_eq!(expected, empty);
@@ -633,7 +659,8 @@ mod tests {
         let mut expected: Vec<_> = ["mod"].iter().map(normalize_path_sep).collect();
 
         for matched_file in GlobWalkerBuilder::new(dir_path, "mod")
-            .build().unwrap()
+            .build()
+            .unwrap()
             .into_iter()
             .filter_map(Result::ok)
         {
@@ -689,9 +716,10 @@ mod tests {
             "contrib[/]lib.rs",
             "contrib[/]README.md",
             "contrib[/]README.rst",
-        ].iter()
-            .map(normalize_path_sep)
-            .collect();
+        ]
+        .iter()
+        .map(normalize_path_sep)
+        .collect();
 
         let patterns = [
             "src/**/*.rs",
@@ -701,7 +729,8 @@ mod tests {
             "!world.rs",
         ];
         for matched_file in GlobWalkerBuilder::from_patterns(dir_path, &patterns)
-            .build().unwrap()
+            .build()
+            .unwrap()
             .into_iter()
             .filter_map(Result::ok)
         {
@@ -750,7 +779,8 @@ mod tests {
 
         let patterns = ["*.{png,jpg,gif}", "!Pictures"];
         for matched_file in GlobWalkerBuilder::from_patterns(dir_path, &patterns)
-            .build().unwrap()
+            .build()
+            .unwrap()
             .into_iter()
             .filter_map(Result::ok)
         {
@@ -786,7 +816,10 @@ mod tests {
         cwd.push("**");
         cwd.push("*.{png,jpg,gif}");
         for matched_file in glob(cwd.to_str().unwrap().to_owned())
-            .unwrap().into_iter().filter_map(Result::ok) {
+            .unwrap()
+            .into_iter()
+            .filter_map(Result::ok)
+        {
             let path = matched_file
                 .path()
                 .strip_prefix(&dir_path)
@@ -805,5 +838,60 @@ mod tests {
 
         let empty: &[&str] = &[][..];
         assert_eq!(expected, empty);
+    }
+
+    #[test]
+    fn test_glob_single_star() {
+        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir_path = dir.path();
+        create_dir_all(dir_path.join("Pictures")).expect("");
+        create_dir_all(dir_path.join("Pictures").join("b")).expect("");
+
+        touch(
+            &dir,
+            &[
+                "a.png",
+                "b.png",
+                "c.png",
+                "Pictures[/]a.png",
+                "Pictures[/]b.png",
+                "Pictures[/]c.png",
+                "Pictures[/]b[/]c.png",
+                "Pictures[/]b[/]c.png",
+                "Pictures[/]b[/]c.png",
+            ][..],
+        );
+
+        let mut builder = OverrideBuilder::new(dir_path);
+        builder.add("/*").unwrap();
+        let ignore = builder.build().unwrap();
+
+        let mut actual = vec![];
+        for matched_file in GlobWalkerBuilder::new(dir_path, "*")
+            .sort_by(|a, b| a.path().cmp(b.path()))
+            .build()
+            .unwrap()
+            .into_iter()
+            .filter_map(Result::ok)
+        {
+            match ignore.matched(matched_file.path(), false) {
+                Match::Whitelist(_) => {
+                    println!("WL: {:?}", matched_file);
+                }
+                _ => {}
+            }
+
+            actual.push(
+                matched_file
+                    .path()
+                    .strip_prefix(dir_path)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_owned(),
+            );
+        }
+
+        assert_eq!(actual, vec!["Pictures", "a.png", "b.png", "c.png"]);
     }
 }
