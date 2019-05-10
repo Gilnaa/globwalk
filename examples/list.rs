@@ -20,13 +20,16 @@
 
 extern crate globwalk;
 
-use std::env::args;
 use globwalk::GlobWalkerBuilder;
+use std::env::args;
 
 fn main() {
     let patterns = args().skip(1).collect::<Vec<_>>();
 
-    for f in GlobWalkerBuilder::from_patterns(".", &patterns[..]).build().unwrap() {
+    for f in GlobWalkerBuilder::from_patterns(".", &patterns[..])
+        .build()
+        .unwrap()
+    {
         println!("{:?}", f.unwrap().path());
     }
 }
