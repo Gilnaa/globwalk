@@ -15,7 +15,7 @@ appveyor  = { repository = "Gilnaa/globwalk" }
 
 [dependencies]
 walkdir = "2"
-ignore = "0.4"
+ignore = "0.4.6"
 
 [dev-dependencies]
 tempdir = "0.3"
