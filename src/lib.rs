@@ -377,11 +377,11 @@ impl Iterator for GlobWalker {
     }
 }
 
-/// Construct a new `GlobWalker` with a glob pattern.
+/// Construct a new `GlobWalkerBuilder` with a glob pattern.
 ///
 /// When iterated, the current directory will be recursively searched for paths
 /// matching `pattern`, unless the pattern specifies an absolute path.
-pub fn glob<S: AsRef<str>>(pattern: S) -> Result<GlobWalker, GlobError> {
+pub fn glob_builder<S: AsRef<str>>(pattern: S) -> GlobWalkerBuilder {
     // Check to see if the pattern starts with an absolute path
     let path_pattern: PathBuf = pattern.as_ref().into();
     if path_pattern.is_absolute() {
@@ -409,14 +409,22 @@ pub fn glob<S: AsRef<str>>(pattern: S) -> Result<GlobWalker, GlobError> {
 
         let pat = pattern.to_str().unwrap();
         if cfg!(windows) {
-            GlobWalkerBuilder::new(base.to_str().unwrap(), pat.replace("\\", "/")).build()
+            GlobWalkerBuilder::new(base.to_str().unwrap(), pat.replace("\\", "/"))
         } else {
-            GlobWalkerBuilder::new(base.to_str().unwrap(), pat).build()
+            GlobWalkerBuilder::new(base.to_str().unwrap(), pat)
         }
     } else {
         // If the pattern is relative, start searching from the current directory.
-        GlobWalkerBuilder::new(".", pattern).build()
+        GlobWalkerBuilder::new(".", pattern)
     }
+}
+
+/// Construct a new `GlobWalker` with a glob pattern.
+///
+/// When iterated, the current directory will be recursively searched for paths
+/// matching `pattern`, unless the pattern specifies an absolute path.
+pub fn glob<S: AsRef<str>>(pattern: S) -> Result<GlobWalker, GlobError> {
+    glob_builder(pattern).build()
 }
 
 #[cfg(test)]
