@@ -31,14 +31,14 @@ globwalk = "0.7"
 
 The following piece of code recursively find all mp3 and FLAC files:
 
-```rust,no_run
+```rust
 extern crate globwalk;
 
 use std::fs;
 
 for img in globwalk::glob("*.{png,jpg,gif}").unwrap() {
     if let Ok(img) = img {
-        fs::remove_file(img.path()).unwrap();
+        println!("{:?}", img.path());
     }
 }
 ```
