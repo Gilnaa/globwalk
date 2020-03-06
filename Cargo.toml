@@ -20,3 +20,7 @@ ignore = "0.4.6"
 [dev-dependencies]
 tempdir = "0.3"
 docmatic = "0.1"
+
+# We're not using backtrace, really. It is just a deep dependency of docmatic.
+# Locking down its version so that we can compile the tests using rustc 1.31.0
+backtrace = "=0.3.35"
