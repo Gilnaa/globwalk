@@ -18,11 +18,11 @@ matrix:
     script:
     - cargo check --tests
   - env: CLIPPY
-    rust: nightly-2018-07-17
+    rust: 1.41.0
     install:
-      - rustup component add clippy-preview
+      - rustup component add clippy
     script:
-      - cargo clippy --all-features -- -D clippy
+      - cargo clippy --all-features -- -D clippy::all
   allow_failures:
     - rust: nightly
   fast_finish: true
