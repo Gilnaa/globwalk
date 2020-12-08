@@ -15,12 +15,12 @@ appveyor  = { repository = "Gilnaa/globwalk" }
 
 [dependencies]
 walkdir = "2"
-ignore = "0.4.6"
+ignore = "0.4.11"
 bitflags = "1.2"
 
 [dev-dependencies]
-tempdir = "0.3"
-docmatic = "0.1"
+tempdir = "0.3.6"
+docmatic = "0.1.2"
 
 # We're not using backtrace, really. It is just a deep dependency of docmatic.
 # Locking down its version so that we can compile the tests using rustc 1.31.0
