@@ -424,7 +424,11 @@ impl Iterator for GlobWalker {
                             Match::Whitelist(_) if file_type_matches => return Some(Ok(e)),
                             // If the directory is ignored, quit the iterator loop and
                             // skip-out of this directory.
-                            Match::None | Match::Ignore(_) if is_dir => {
+                            Match::Ignore(_) if is_dir => {
+                                skip_dir = true;
+                                continue 'skipper;
+                            }
+                            Match::None if is_dir => {
                                 if !self.parent_ignore.matched(&path, true).is_whitelist() {
                                     skip_dir = true;
                                     continue 'skipper;
