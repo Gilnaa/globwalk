@@ -19,7 +19,7 @@ ignore = "0.4.11"
 bitflags = "1.2"
 
 [dev-dependencies]
-tempdir = "0.3.6"
+tempfile = "3"
 docmatic = "0.1.2"
 
 # We're not using backtrace, really. It is just a deep dependency of docmatic.

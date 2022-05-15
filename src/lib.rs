@@ -89,7 +89,7 @@ extern crate walkdir;
 
 extern crate bitflags;
 #[cfg(test)]
-extern crate tempdir;
+extern crate tempfile;
 
 use ignore::overrides::{Override, OverrideBuilder};
 use ignore::Match;
@@ -477,7 +477,7 @@ pub fn glob<S: AsRef<str>>(pattern: S) -> Result<GlobWalker, GlobError> {
 mod tests {
     use super::*;
     use std::fs::{create_dir_all, File};
-    use tempdir::TempDir;
+    use tempfile::TempDir;
 
     fn touch(dir: &TempDir, names: &[&str]) {
         for name in names {
@@ -518,7 +518,7 @@ mod tests {
 
     #[test]
     fn test_absolute_path() {
-        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir = TempDir::new().expect("Failed to create temporary folder");
         let dir_path = dir.path().canonicalize().unwrap();
 
         touch(&dir, &["a.rs", "a.jpg", "a.png", "b.docx"][..]);
@@ -533,7 +533,7 @@ mod tests {
 
     #[test]
     fn test_new() {
-        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir = TempDir::new().expect("Failed to create temporary folder");
         let dir_path = dir.path();
 
         touch(&dir, &["a.rs", "a.jpg", "a.png", "b.docx"][..]);
@@ -549,7 +549,7 @@ mod tests {
 
     #[test]
     fn test_from_patterns() {
-        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir = TempDir::new().expect("Failed to create temporary folder");
         let dir_path = dir.path();
         create_dir_all(dir_path.join("src/some_mod")).expect("");
         create_dir_all(dir_path.join("tests")).expect("");
@@ -595,7 +595,7 @@ mod tests {
 
     #[test]
     fn test_case_insensitive_matching() {
-        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir = TempDir::new().expect("Failed to create temporary folder");
         let dir_path = dir.path();
         create_dir_all(dir_path.join("src/some_mod")).expect("");
         create_dir_all(dir_path.join("tests")).expect("");
@@ -642,7 +642,7 @@ mod tests {
 
     #[test]
     fn test_match_dir() {
-        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir = TempDir::new().expect("Failed to create temporary folder");
         let dir_path = dir.path();
         create_dir_all(dir_path.join("mod")).expect("");
 
@@ -666,7 +666,7 @@ mod tests {
 
     #[test]
     fn test_blacklist() {
-        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir = TempDir::new().expect("Failed to create temporary folder");
         let dir_path = dir.path();
         create_dir_all(dir_path.join("src/some_mod")).expect("");
         create_dir_all(dir_path.join("tests")).expect("");
@@ -718,7 +718,7 @@ mod tests {
 
     #[test]
     fn test_blacklist_dir() {
-        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir = TempDir::new().expect("Failed to create temporary folder");
         let dir_path = dir.path();
         create_dir_all(dir_path.join("Pictures")).expect("");
 
@@ -749,7 +749,7 @@ mod tests {
 
     #[test]
     fn test_glob_with_double_star_pattern() {
-        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir = TempDir::new().expect("Failed to create temporary folder");
         let dir_path = dir.path().canonicalize().unwrap();
 
         touch(&dir, &["a.rs", "a.jpg", "a.png", "b.docx"][..]);
@@ -764,7 +764,7 @@ mod tests {
 
     #[test]
     fn test_glob_single_star() {
-        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir = TempDir::new().expect("Failed to create temporary folder");
         let dir_path = dir.path();
         create_dir_all(dir_path.join("Pictures")).expect("");
         create_dir_all(dir_path.join("Pictures").join("b")).expect("");
@@ -797,7 +797,7 @@ mod tests {
 
     #[test]
     fn test_file_type() {
-        let dir = TempDir::new("globset_walkdir").expect("Failed to create temporary folder");
+        let dir = TempDir::new().expect("Failed to create temporary folder");
         let dir_path = dir.path();
         create_dir_all(dir_path.join("Pictures")).expect("");
         create_dir_all(dir_path.join("Pictures").join("b")).expect("");

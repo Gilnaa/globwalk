@@ -1,12 +1,12 @@
-extern crate tempdir;
+extern crate tempfile;
 
 use std::error::Error;
 use std::fs::{File, create_dir_all};
 use std::path::PathBuf;
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 fn create_files(files: &[&str]) -> Result<TempDir, Box<Error>> {
-    let tmp_dir = TempDir::new("globwalk")?;
+    let tmp_dir = TempDir::new()?;
 
     for f in files {
         let file_path = PathBuf::from(f);
