@@ -17,7 +17,7 @@ appveyor  = { repository = "Gilnaa/globwalk" }
 
 [dependencies]
 walkdir = "2"
-ignore = "0.4.20"
+ignore = "0.4.11"
 bitflags = "2"
 
 [dev-dependencies]
