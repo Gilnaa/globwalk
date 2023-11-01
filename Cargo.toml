@@ -8,6 +8,9 @@ license = "MIT"
 repository = "https://github.com/gilnaa/globwalk"
 categories = ["filesystem"]
 keywords = ["regex", "glob", "pattern", "walk", "iterator"]
+rust-version = "1.65.0"
+edition = "2021"
+resolver = "2"
 
 [badges]
 travis-ci = { repository = "Gilnaa/globwalk" }
@@ -15,13 +18,9 @@ appveyor  = { repository = "Gilnaa/globwalk" }
 
 [dependencies]
 walkdir = "2"
-ignore = "0.4.11"
-bitflags = "1.2"
+ignore = "0.4.20"
+bitflags = "2"
 
 [dev-dependencies]
 tempfile = "3"
 docmatic = "0.1.2"
-
-# We're not using backtrace, really. It is just a deep dependency of docmatic.
-# Locking down its version so that we can compile the tests using rustc 1.31.0
-backtrace = "=0.3.35"

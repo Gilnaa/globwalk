@@ -36,7 +36,7 @@
 //! # include!("doctests.rs");
 //!
 //! use std::fs;
-//! # fn run() -> Result<(), Box<::std::error::Error>> {
+//! # fn run() -> Result<(), Box<dyn ::std::error::Error>> {
 //! # let temp_dir = create_files(&["cow.jog", "cat.gif"])?;
 //! # ::std::env::set_current_dir(&temp_dir)?;
 //!
@@ -60,7 +60,7 @@
 //!
 //! use std::fs;
 //!
-//! # fn run() -> Result<(), Box<::std::error::Error>> {
+//! # fn run() -> Result<(), Box<dyn ::std::error::Error>> {
 //! # let temp_dir = create_files(&["cow.jog", "cat.gif"])?;
 //! # let BASE_DIR = &temp_dir;
 //! let walker = globwalk::GlobWalkerBuilder::from_patterns(
@@ -131,11 +131,7 @@ impl std::fmt::Display for GlobError {
     }
 }
 
-impl std::error::Error for GlobError {
-    fn description(&self) -> &str {
-        self.0.description()
-    }
-}
+impl std::error::Error for GlobError {}
 
 bitflags::bitflags! {
     /// Possible file type filters.
@@ -379,7 +375,7 @@ impl Iterator for GlobWalker {
                             None
                         };
 
-                        let file_type_matches = match (self.file_type_filter, file_type) {
+                        let file_type_matches = match (self.file_type_filter.as_ref(), file_type) {
                             (None, _) => true,
                             (Some(_), None) => false,
                             (Some(filter), Some(actual)) => filter.contains(actual),
@@ -455,7 +451,7 @@ pub fn glob_builder<S: AsRef<str>>(pattern: S) -> GlobWalkerBuilder {
 
         let pat = pattern.to_str().unwrap();
         if cfg!(windows) {
-            GlobWalkerBuilder::new(base.to_str().unwrap(), pat.replace("\\", "/"))
+            GlobWalkerBuilder::new(base.to_str().unwrap(), pat.replace('\\', "/"))
         } else {
             GlobWalkerBuilder::new(base.to_str().unwrap(), pat)
         }
