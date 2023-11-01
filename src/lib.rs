@@ -84,13 +84,6 @@
 #![allow(clippy::needless_doctest_main)]
 #![warn(missing_docs)]
 
-extern crate ignore;
-extern crate walkdir;
-
-extern crate bitflags;
-#[cfg(test)]
-extern crate tempfile;
-
 use ignore::overrides::{Override, OverrideBuilder};
 use ignore::Match;
 use std::cmp::Ordering;
@@ -126,7 +119,7 @@ impl From<GlobError> for std::io::Error {
 }
 
 impl std::fmt::Display for GlobError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         self.0.fmt(f)
     }
 }

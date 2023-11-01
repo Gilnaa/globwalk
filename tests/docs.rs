@@ -1,5 +1,3 @@
-extern crate docmatic;
-
 #[test]
 fn readme_test() {
     let readme = std::path::Path::new(file!()).canonicalize().unwrap();
