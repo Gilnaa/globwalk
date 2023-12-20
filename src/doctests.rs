@@ -1,11 +1,9 @@
-extern crate tempfile;
-
 use std::error::Error;
-use std::fs::{File, create_dir_all};
+use std::fs::{create_dir_all, File};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-fn create_files(files: &[&str]) -> Result<TempDir, Box<Error>> {
+fn create_files(files: &[&str]) -> Result<TempDir, Box<dyn Error>> {
     let tmp_dir = TempDir::new()?;
 
     for f in files {
