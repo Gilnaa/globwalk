@@ -26,7 +26,7 @@ To use this crate, add `globwalk` as a dependency to your project's `Cargo.toml`
 
 ```toml
 [dependencies]
-globwalk = "0.8.1"
+globwalk = "0.9.0"
 ```
 
 The following piece of code recursively find all `png`, `jpg`, or `gif` files:
