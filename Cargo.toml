@@ -11,10 +11,6 @@ keywords = ["regex", "glob", "pattern", "walk", "iterator"]
 edition = "2021"
 resolver = "2"
 
-[badges]
-travis-ci = { repository = "Gilnaa/globwalk" }
-appveyor  = { repository = "Gilnaa/globwalk" }
-
 [dependencies]
 walkdir = "2"
 ignore = "0.4.11"
