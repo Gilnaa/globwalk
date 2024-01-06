@@ -378,14 +378,10 @@ impl Iterator for GlobWalker {
                         // able to recognize the file name.
                         // `unwrap` here is safe, since walkdir returns the files with relation
                         // to the given base-dir.
-                        let path = e
-                            .path()
-                            .strip_prefix(self.ignore.path())
-                            .unwrap()
-                            .to_owned();
+                        let path = e.path().strip_prefix(self.ignore.path()).unwrap();
 
                         // The path might be empty after stripping if the current base-directory is matched.
-                        if let Some("") = path.to_str() {
+                        if path.as_os_str().is_empty() {
                             continue 'skipper;
                         }
 
