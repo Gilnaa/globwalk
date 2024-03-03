@@ -307,18 +307,37 @@ impl GlobWalkerBuilder {
 
     /// Finalize and build a `GlobWalker` instance.
     pub fn build(self) -> Result<GlobWalker, GlobError> {
-        let mut builder = OverrideBuilder::new(self.root);
+        let mut builder = OverrideBuilder::new(&self.root);
+        let mut parent_paths_builder = OverrideBuilder::new(&self.root);
 
         builder
             .case_insensitive(self.case_insensitive)
             .map_err(GlobError)?;
 
+        parent_paths_builder
+            .case_insensitive(self.case_insensitive)
+            .map_err(GlobError)?;
+
         for pattern in self.patterns {
             builder.add(pattern.as_ref()).map_err(GlobError)?;
+            let pattern_path = PathBuf::from(pattern);
+
+            for parent in pattern_path.ancestors().skip(1) {
+                if parent.as_os_str().is_empty() {
+                    // ancestors iterator yields "" last
+                    break;
+                }
+                parent_paths_builder
+                    // expect is safe since the globs are passed as strings and thus must be valid utf-8,
+                    // including the parent paths
+                    .add(parent.to_str().expect("Parent path not valid utf-8"))
+                    .map_err(GlobError)?;
+            }
         }
 
         Ok(GlobWalker {
             ignore: builder.build().map_err(GlobError)?,
+            parent_ignore: parent_paths_builder.build().map_err(GlobError)?,
             walker: self.walker.into_iter(),
             file_type_filter: self.file_type,
         })
@@ -334,6 +353,7 @@ impl GlobWalkerBuilder {
 /// using `GlobWalker::sort_by`.
 pub struct GlobWalker {
     ignore: Override,
+    parent_ignore: Override,
     walker: walkdir::IntoIter,
     file_type_filter: Option<FileType>,
 }
@@ -385,13 +405,19 @@ impl Iterator for GlobWalker {
                             continue 'skipper;
                         }
 
-                        match self.ignore.matched(path, is_dir) {
+                        match self.ignore.matched(&path, is_dir) {
                             Match::Whitelist(_) if file_type_matches => return Some(Ok(e)),
                             // If the directory is ignored, quit the iterator loop and
                             // skip-out of this directory.
                             Match::Ignore(_) if is_dir => {
                                 skip_dir = true;
                                 continue 'skipper;
+                            }
+                            Match::None if is_dir => {
+                                if !self.parent_ignore.matched(&path, true).is_whitelist() {
+                                    skip_dir = true;
+                                    continue 'skipper;
+                                }
                             }
                             _ => {}
                         }
